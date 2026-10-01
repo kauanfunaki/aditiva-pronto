@@ -11,7 +11,11 @@
 -- Nomes de pasta usam COLLATE utf8mb4_bin: duas pastas que
 -- diferem só por acento ou caixa são pastas diferentes na rede.
 -- ============================================================
--- Execute: mysql -u <user> -p <database> < scripts/migrations/003-auditoria-base.sql
+-- Execute (credenciais do .env da raiz; não precisa do client mysql):
+--   node scripts/run-migration.mjs scripts/migrations/003-auditoria-base.sql --dry-run
+--   node scripts/run-migration.mjs scripts/migrations/003-auditoria-base.sql
+-- Ou, com o client mysql:
+--   mysql -u <user> -p <database> < scripts/migrations/003-auditoria-base.sql
 -- ============================================================
 
 -- ------------------------------------------------------------
