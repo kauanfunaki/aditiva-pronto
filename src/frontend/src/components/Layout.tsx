@@ -80,6 +80,10 @@ export default function Layout() {
             <p className="mt-4 mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-zinc-500">
               Auditoria
             </p>
+            <NavLink to="/auditoria/contratos" className={navClass}>
+              <FileText size={17} weight="duotone" />
+              Contratos
+            </NavLink>
             <NavLink to="/auditoria/aditivos" className={navClass}>
               <FileText size={17} weight="duotone" />
               Aditivos
