@@ -183,7 +183,7 @@ muda o endereço.
 | Frente | Dono | Onde mexe |
 |--------|------|-----------|
 | **Fase 1 — Base compartilhada** | Os dois (divisão na decisão 9, seção 10) | migration `003`, `routes/audit.ts`, `*AuditBase*`, `automation/auditoria/`, `components/audit/` |
-| **Fase 2A — Auditoria Aditivos** | Kauan | migration `004`, `*AuditAditivos*`, `pages/audit/Aditivos.tsx` |
+| **Fase 2A — Auditoria Aditivos** | Kauan | `*AuditAditivos*`, `pages/audit/Aditivos.tsx` (sem migration) |
 | **Fase 2B — Auditoria Contratos** | Angelo | migration `005`, `*AuditContratos*`, `pages/audit/Contratos.tsx` |
 | **Fase 3 — Homologação** | Os dois + Societário | — |
 
@@ -222,8 +222,10 @@ outro). Dentro do próprio módulo, cada um decide sozinho.
 5. ⏳ **Instalação no PC das automações**: serviço do Windows (NSSM) que reinicia sozinho.
    ✅ A **sincronização diária às 06:00** já é criada pelo app (seção 8.4), sem agendador no PC.
 6. ✅ **Tela Auditoria › Vínculo de pastas**: vínculo automático (seção 8.5), sugestões,
-   busca de empresa, confirmar/trocar/ignorar/desfazer. ⏳ Falta "marcar empresa como sem
-   pasta" (a empresa que não tem pasta na rede de propósito).
+   busca de empresa, confirmar/trocar/ignorar/desfazer. ✅ Aba **Empresas sem pasta**
+   (migration `004`): sugere a pasta no sentido empresa → pasta, ou marca a empresa como
+   "sem pasta de propósito", com motivo opcional. Empresa marcada **sai da auditoria**.
+   Vincular uma empresa marcada tira a marca sozinho.
 7. ✅ **Componente `<SyncBar/>`** (`components/audit/SyncBar.tsx`): botão Sincronizar e
    estado (aguardando robô · varrendo 210 de 513 · concluída há 5 min · erro · robô offline).
    É o mesmo para os dois módulos.
@@ -259,6 +261,12 @@ O mesmo formato: classificador, status por empresa, tela e exportação. **As re
 suas.** A seção 3.3 traz os padrões que encontrei, e a seção 7 é só um exemplo de
 estrutura. Pontos que merecem atenção nos contratos: contrato antigo junto com o novo, distrato,
 "Sem assinatura" escrito no nome, e contrato de abertura de empresa (outro serviço).
+
+**Regra da base que o seu módulo precisa seguir:** empresa marcada como "sem pasta"
+(`au_empresas_sem_pasta`) e sem pasta vinculada fica **fora** do relatório. Se ganhou pasta
+depois, volta a ser avaliada. A tela de Aditivos faz assim em `auditAditivosService.ts`
+(`foraDaAuditoria`) e mostra quantas ficaram de fora. A função `base.listarMarcasSemPasta()`
+já existe.
 
 ### Fase 3 — Integração e homologação
 
@@ -328,7 +336,10 @@ e vale para os dois módulos.
 - Cada job guarda um retrato completo. Ao concluir, apaga jobs com mais de 30 dias, sempre
   preservando o último concluído.
 - `au_overrides` (conferência manual) **não** está na `003`. Entra na Fase 3.
-- Cada módulo cria as próprias tabelas: `004` para Aditivos e `005` para Contratos.
+- `au_empresas_sem_pasta` (`004`): `company_id`, `motivo`, `marcado_em`. É a empresa ativa
+  que não tem pasta na rede de propósito. Fica fora da auditoria nos dois módulos.
+- A Fase 2A não precisou de tabela, então a `004` ficou com a base. `005` continua
+  reservada para Contratos, e `006` para a conferência manual (Fase 3).
 
 ### 8.2 Endpoints
 
@@ -337,8 +348,9 @@ Tela (sem token, como o resto do app):
 ```
 GET  /api/audit/status        → { ativo, ultimoConcluido, ultimoErro, robo: { host, versao, vistoEm, online } }
 POST /api/audit/sync          → 201 { job, criado: true }  |  200 { job, criado: false } se já houver um ativo
-GET  /api/audit/folders       → { job, resumo, pastas: [{ nomePasta, subpastasContrato, arquivos, erro, vinculo, sugestoes }] }
+GET  /api/audit/folders       → { job, resumo, pastas: [{ nomePasta, subpastasContrato, arquivos, erro, vinculo, sugestoes }], empresasSemPasta: [{ id, razaoSocial, cnpj, marcada, motivo, sugestoesDePasta }] }
 PUT  /api/audit/folders/link  → { acao: 'vincular', nomePasta, companyId } | { acao: 'ignorar', nomePasta } | { acao: 'desfazer', nomePasta }
+PUT  /api/audit/companies/sem-pasta → { acao: 'marcar', companyId, motivo? } | { acao: 'desmarcar', companyId }
 ```
 
 Robô (header `Authorization: Bearer <AUDIT_ROBOT_TOKEN>`; sem token configurado no servidor → 503):
@@ -458,8 +470,9 @@ sem pasta.
 
 - **Branches:** `feat/auditoria-base`, `feat/auditoria-aditivos`, `feat/auditoria-contratos`.
   PR para a `main` sempre revisado pelo outro.
-- **Migrations com número reservado:** `003` é da Base, `004` dos Aditivos e `005` dos
-  Contratos. Isso evita dois "003" criados no mesmo dia.
+- **Migrations com número reservado:** `003` e `004` são da Base, `005` dos Contratos
+  (Angelo) e `006` da conferência manual (Fase 3). Isso evita dois números iguais criados
+  no mesmo dia.
 - **Banco compartilhado com o Radar Societário:** nada de `DROP`/`ALTER` fora das tabelas
   `au_*`. Migration sempre idempotente, como as atuais.
 - **A rede é somente leitura.** O robô nunca cria, move, renomeia ou apaga nada em

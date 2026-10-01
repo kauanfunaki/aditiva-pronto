@@ -237,6 +237,14 @@ export default function Aditivos() {
                 {soAlerta ? ' · mostrando só elas' : ''}
               </button>
             )}
+            {r.marcadasSemPasta > 0 && (
+              <p className="mt-2 text-xs text-gray-500 dark:text-zinc-400">
+                {r.marcadasSemPasta} empresa(s) marcada(s) como sem pasta na rede ficaram fora da auditoria.{' '}
+                <Link to="/auditoria/pastas?aba=empresas" className="underline hover:text-gray-700 dark:hover:text-zinc-200">
+                  Ver quais
+                </Link>
+              </p>
+            )}
           </div>
 
           {/* ── Filtros ── */}
@@ -384,7 +392,7 @@ export default function Aditivos() {
                                 <Copy size={14} aria-hidden /> Copiar caminho
                               </button>
                             ) : (
-                              <Link to="/auditoria/pastas" className="btn-outline min-h-[44px] px-3 py-1.5 whitespace-nowrap">
+                              <Link to="/auditoria/pastas?aba=empresas" className="btn-outline min-h-[44px] px-3 py-1.5 whitespace-nowrap">
                                 Vincular pasta
                               </Link>
                             )}

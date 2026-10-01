@@ -64,6 +64,8 @@ export interface RelatorioAditivos {
     emDia:                 number;
     porStatus:             Record<StatusAditivo, number>;
     geradoNoAppSemArquivo: number;
+    /** Marcadas como "sem pasta na rede de propósito": ficam fora do relatório. */
+    marcadasSemPasta:      number;
   };
   empresas: EmpresaAditivo[];
 }
@@ -99,17 +101,18 @@ export async function montarRelatorioAditivos(anoReferencia: number): Promise<Re
   const [ultimo, config] = await Promise.all([base.buscarUltimoConcluido(), base.obterConfig()]);
   const vazio: RelatorioAditivos = {
     job: null, anoReferencia, anosDisponiveis: [anoReferencia], raizUnc: config.raizUnc,
-    resumo: { empresas: 0, emDia: 0, porStatus: porStatusZerado(), geradoNoAppSemArquivo: 0 },
+    resumo: { empresas: 0, emDia: 0, porStatus: porStatusZerado(), geradoNoAppSemArquivo: 0, marcadasSemPasta: 0 },
     empresas: [],
   };
   if (!ultimo) return vazio;
 
-  const [pastas, vinculos, arquivos, empresas, gerados] = await Promise.all([
+  const [pastas, vinculos, arquivos, todasAtivas, gerados, marcas] = await Promise.all([
     base.listarPastasDoJob(ultimo.id),
     base.listarVinculos(),
     repo.listarArquivosDoJob(ultimo.id),
     repo.listarEmpresasAtivas(),
     repo.contarGeradosNoApp(inicioDoAno(anoReferencia), inicioDoAno(anoReferencia + 1)),
+    base.listarMarcasSemPasta(),
   ]);
 
   // Arquivos agrupados por pasta.
@@ -142,6 +145,12 @@ export async function montarRelatorioAditivos(anoReferencia: number): Promise<Re
     });
     pastasPorEmpresa.set(v.company_id, lista);
   }
+
+  // Marcada como "sem pasta" e de fato sem pasta vinculada: fora da auditoria.
+  // Se ganhou pasta depois, volta a ser avaliada normalmente.
+  const marcadas = new Set(marcas.map((m) => m.company_id));
+  const foraDaAuditoria = (id: string) => marcadas.has(id) && !pastasPorEmpresa.has(id);
+  const empresas = todasAtivas.filter((e) => !foraDaAuditoria(e.id));
 
   const ordem = new Map(STATUS_ADITIVO.map((s, i) => [s, i]));
   const linhas: EmpresaAditivo[] = empresas.map((e) => {
@@ -191,6 +200,7 @@ export async function montarRelatorioAditivos(anoReferencia: number): Promise<Re
       emDia:                 linhas.filter((l) => l.emDia).length,
       porStatus,
       geradoNoAppSemArquivo: linhas.filter((l) => l.alertas.includes('gerado_no_app_sem_arquivo')).length,
+      marcadasSemPasta:      todasAtivas.length - empresas.length,
     },
     empresas: linhas,
   };
