@@ -175,3 +175,61 @@ export type AuditAcaoVinculo =
   | { acao: 'vincular'; nomePasta: string; companyId: string }
   | { acao: 'ignorar';  nomePasta: string }
   | { acao: 'desfazer'; nomePasta: string };
+
+// ── Auditoria Aditivos (Fase 2A) ─────────────────────────────────────
+
+export type AuditStatusAditivo =
+  | 'SEM_VINCULO' | 'SEM_PASTA_CONTRATO' | 'SEM_ADITIVO' | 'SO_DOCX'
+  | 'PDF_SEM_ASSINATURA' | 'ASSINADO_PELO_NOME' | 'ASSINADO_DIGITAL';
+
+export type AuditAssinatura = 'digital' | 'pelo_nome' | 'declarada_sem' | 'nenhuma' | 'nao_se_aplica';
+
+export interface AuditArquivoAditivo {
+  nomePasta:       string;
+  caminhoRelativo: string;
+  nome:            string;
+  formato:         'word' | 'pdf' | 'imagem' | 'outro';
+  assinatura:      AuditAssinatura;
+  icp:             boolean;
+  decimoTerceiro:  boolean;
+  honorario:       boolean;
+  ano:             number;
+  anoFonte:        'nome' | 'data_do_arquivo';
+  modificadoEm:    string;
+}
+
+export interface AuditEmpresaAditivo {
+  empresa: { id: string; razaoSocial: string; cnpj: string; responsavel: string | null };
+  status:                 AuditStatusAditivo;
+  emDia:                  boolean;
+  pastas:                 { nomePasta: string; subpastasContrato: string[] }[];
+  aditivosDoAno:          AuditArquivoAditivo[];
+  outrosAditivos:         AuditArquivoAditivo[];
+  ultimoAnoComAditivo:    number | null;
+  temDecimoTerceiroDoAno: boolean;
+  geradosNoApp:           number;
+  ultimoGeradoNoApp:      string | null;
+  alertas:                'gerado_no_app_sem_arquivo'[];
+}
+
+export interface AuditRelatorioAditivos {
+  job:             AuditJob | null;
+  anoReferencia:   number;
+  anosDisponiveis: number[];
+  raizUnc:         string;
+  resumo: {
+    empresas:              number;
+    emDia:                 number;
+    porStatus:             Record<AuditStatusAditivo, number>;
+    geradoNoAppSemArquivo: number;
+  };
+  empresas: AuditEmpresaAditivo[];
+}
+
+export interface AuditFiltrosAditivos {
+  ano?:         number;
+  status?:      AuditStatusAditivo | 'em_dia' | 'pendente';
+  responsavel?: string;
+  busca?:       string;
+  alerta?:      '1';
+}

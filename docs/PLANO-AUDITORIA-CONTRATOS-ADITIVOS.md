@@ -234,12 +234,24 @@ minutos (✅ ~30 s com o robô de teste) e 5 clientes conferidos à mão batem c
 
 ### Fase 2A — Auditoria Aditivos (Kauan) · em paralelo com a 2B
 
-1. Classificador: é aditivo? Que tipo (anual ou 13º)? Formato? Assinatura? Ano?
-2. Status por empresa (seção 7) e o cruzamento com o app: **"gerado no Aditiva Pronto
-   mas não está na pasta"** e o contrário.
-3. Tela: cards de resumo, tabela com filtro por status, responsável e busca, lista de
-   arquivos de cada empresa, botão **copiar caminho da pasta** e exportação XLSX.
-   O navegador bloqueia link `file://` vindo de página web, então copiar o caminho é o jeito que funciona.
+> **Status em 01/10/2026** (branch `feat/auditoria-aditivos`): itens 1 a 3 feitos e testados
+> com o inventário real. Sem migration: o ano de referência é um seletor na tela.
+
+1. ✅ **Classificador** (`services/auditAditivosClassificador.ts`): só extrai fatos de cada
+   arquivo (aditivo, modelo, 13º, honorário, formato, assinatura, ICP, ano, CNPJ no nome).
+   Pega erros de digitação ("Adtivo", "Adivito", "ADITVO"), descarta modelos e não confunde
+   "FILIAL 13" com 13º. No inventário real: 783 aditivos em 276 pastas, sem nenhum falso positivo.
+2. ✅ **Status por empresa** (`services/auditAditivosStatus.ts`, regras da seção 7 com as
+   decisões 3 a 5) e o cruzamento com o app: alerta **"gerado no Aditiva Pronto mas não
+   está na pasta"**, além da contagem de termos gerados no ano. O contrário não virou alerta,
+   porque nem todo aditivo nasce no app.
+3. ✅ **Tela Auditoria › Aditivos**: resumo (em dia / total), filtros por status, ano,
+   responsável e busca, todos guardados na URL. Lista de arquivos de cada empresa, **copiar
+   caminho da pasta** e exportação XLSX com os mesmos filtros. O navegador bloqueia link
+   `file://` vindo de página web, então copiar o caminho é o jeito que funciona.
+
+Retrato de 2026 com os dados de 01/10 (robô de teste): **60 de 428 empresas em dia (14%)**,
+160 com PDF sem assinatura, 82 sem aditivo do ano, 114 sem pasta vinculada.
 
 ### Fase 2B — Auditoria Contratos (Angelo) · em paralelo com a 2A
 
@@ -467,9 +479,9 @@ sem pasta.
 |---|----------|----------------|
 | 1 | O robô fala com a API ou direto com o MySQL? | API (seção 4). ✅ Implementado assim |
 | 2 | Um botão Sincronizar atualiza os dois módulos ou cada um tem o seu? | Uma varredura atualiza os dois, e o botão aparece nas duas telas. ✅ Implementado assim (`<SyncBar/>`) |
-| 3 | O que é "aditivo em dia"? | Arquivo do ano de referência (configurável). Na Fase 4, ler a data de dentro do documento |
-| 4 | "ASS" no nome sem assinatura embutida conta como assinado? | Conta, mas com status próprio (`ASSINADO_PELO_NOME`) para dar para filtrar |
-| 5 | O Termo Aditivo 13º conta como o aditivo do ano? | Não, é um tipo separado e não fecha a pendência |
+| 3 | O que é "aditivo em dia"? | ✅ **Decidido (Kauan, 01/10):** tem aditivo assinado do ano de referência. O ano é um seletor na tela, e o ano do arquivo vem do nome ou da data de modificação. Na Fase 4, ler a data de dentro do documento |
+| 4 | "ASS" no nome sem assinatura embutida conta como assinado? | ✅ **Decidido (Kauan, 01/10):** conta como em dia, mas com status próprio (`ASSINADO_PELO_NOME`) para dar para filtrar |
+| 5 | O Termo Aditivo 13º conta como o aditivo do ano? | ✅ **Decidido (Kauan, 01/10):** sozinho não fecha a pendência. "13º e Honorário" fecha |
 | 6 | Filial: o contrato/aditivo fica na pasta da filial ou na da matriz? | Perguntar ao Societário. Isso muda a regra das 65 pastas de filial |
 | 7 | Qual PC roda o robô, com qual conta? Ele alcança o app pela VPN? | Verificar na Fase 0 |
 | 8 | Sincronização automática? | Sim, diária às 06:00, além do botão. ✅ Implementado (`au_config.horario_agendado`; `NULL` desliga) |

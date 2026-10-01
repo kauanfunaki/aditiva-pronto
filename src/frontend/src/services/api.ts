@@ -4,6 +4,7 @@ import type {
   DashboardStats, ListResponse, PreviewResponse, CompanyStatus,
   ReportPayload, Responsavel,
   AuditStatus, AuditJob, AuditPastasResponse, AuditAcaoVinculo,
+  AuditRelatorioAditivos, AuditFiltrosAditivos,
 } from '../types';
 
 const http = axios.create({
@@ -163,6 +164,18 @@ export const listAuditFolders = () =>
 
 export const updateAuditFolderLink = (payload: AuditAcaoVinculo) =>
   http.put<{ message: string }>('/audit/folders/link', payload).then((r) => r.data);
+
+// ── Auditoria Aditivos ──────────────────────────────────────────
+export const getAuditAditivos = (ano: number) =>
+  http.get<AuditRelatorioAditivos>('/audit/aditivos', { params: { ano } }).then((r) => r.data);
+
+export async function exportAuditAditivos(filtros: AuditFiltrosAditivos): Promise<void> {
+  const response = await http.get('/audit/aditivos/export', { params: filtros, responseType: 'blob' });
+  const contentDisp = response.headers['content-disposition'] as string | undefined;
+  const match       = contentDisp?.match(/filename="([^"]+)"/);
+  const fileName    = match?.[1] ? decodeURIComponent(match[1]) : `auditoria_aditivos_${filtros.ano ?? ''}.xlsx`;
+  triggerBlobDownload(response.data as Blob, fileName);
+}
 
 // ── Reports ─────────────────────────────────────────────────────
 export async function exportCompaniesReport(
