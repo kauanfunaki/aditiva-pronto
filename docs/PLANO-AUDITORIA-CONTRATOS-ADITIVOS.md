@@ -1,9 +1,10 @@
 # Auditoria de Contratos e Aditivos — plano para alinharmos
 
 > **Para:** Angelo · **De:** Kauan · **Data:** 01/10/2026
-> **Status:** proposta para discussão. A parte do Kauan na Fase 1 (base comum: banco, API,
-> barra de sincronização e tela de vínculo) já está implementada na branch
-> `feat/auditoria-base`, ainda sem merge e sem deploy. A seção 8 traz o contrato **como foi
+> **Status (01/10/2026):** a parte do Kauan na Fase 1 (base comum: banco, API, barra de
+> sincronização e tela de vínculo) está **na `main` e em produção** em
+> aditivapronto.41tech.cloud. A migration 003 foi aplicada e o `AUDIT_ROBOT_TOKEN` está
+> configurado. Falta o robô coletor (seção 8.4). A seção 8 traz o contrato **como foi
 > implementado**. As seções 10 e 11 listam o que ainda precisamos decidir juntos.
 
 ---
@@ -103,7 +104,7 @@ abaixo são a matéria-prima dos dois módulos.
 - 771 arquivos com "ADITIV" no nome, em 271 clientes. **719 são de 2026**, ou seja, a rodada deste ano.
 - 259 clientes têm DOCX + PDF, 4 só DOCX e 8 só PDF.
 - **Ter PDF não quer dizer que está assinado.** Dos 420 PDFs de aditivo, só **85** têm
-  assinatura digital embutida (25 com marca ICP-Brasil/gov.br). Os outros ~335 são o DOCX
+  assinatura digital embutida. Os outros ~335 são o DOCX
   exportado para PDF (~180 KB cada). 7 arquivos dizem "ASS/ASSINADO" no nome e não têm
   assinatura embutida (provavelmente papel escaneado).
 - Existe um tipo diferente: o **"Termo Aditivo 13º"** (honorário de 13º), às vezes numa
@@ -206,10 +207,11 @@ outro). Dentro do próprio módulo, cada um decide sozinho.
 
 ### Fase 1 — Base compartilhada
 
-> **Status em 01/10/2026** (branch `feat/auditoria-base`): ✅ = feito e testado · ⏳ = falta.
+> **Status em 01/10/2026** (na `main` e em produção): ✅ = feito e testado · ⏳ = falta.
 
 1. ✅ **Migration `003-auditoria-base.sql`**: tabelas `au_*` (seção 8.1), idempotente como
-   as `001`/`002`. Testada em MySQL 8 local. **Ainda não aplicada em produção.**
+   as `001`/`002`. Testada em MySQL 8 local e **aplicada em produção em 01/10** com
+   `node scripts/run-migration.mjs scripts/migrations/003-auditoria-base.sql`.
 2. ✅ **API do robô** (protegida por `AUDIT_ROBOT_TOKEN`): pegar job, enviar lotes,
    concluir/falhar. O job é pego com `UPDATE … WHERE status = 'pendente'`, para dois robôs
    nunca pegarem o mesmo.
@@ -288,7 +290,7 @@ e vale para os dois módulos.
 
 ---
 
-## 8. O contrato da Base (implementado na branch `feat/auditoria-base`)
+## 8. O contrato da Base (implementado e em produção)
 
 > Atualizado em 01/10/2026 com o que foi implementado e testado contra a rede real
 > (513 pastas, 1.601 arquivos, 11 lotes, ~30 s). O que mudou em relação ao rascunho:
@@ -400,7 +402,15 @@ Códigos que o robô precisa tratar: **400** (payload inválido, com a mensagem 
 3. Em cada pasta, as subpastas de 1º nível cujo `semAcentoMaiusculo(nome)` casa com
    `new RegExp(config.regexSubpastaContrato)` são as subpastas de contrato. Lista os
    arquivos delas **recursivamente**. Pasta sem subpasta de contrato também vai no lote, com `[]`.
-4. PDF: lê os bytes e procura `/ByteRange` (assinado) e `ICP-Brasil` (marca `icp`).
+4. PDF: lê os bytes e procura `/ByteRange` (assinado) e a marca ICP-Brasil (`marca: 'icp'`).
+   **Atenção:** a marca fica dentro do certificado, em `/Contents <…>`, que é **hexadecimal**.
+   Procurar o texto `ICP-Brasil` acha 1 de 256 PDFs assinados da pasta. Procurar também o
+   hex `4943502d42726173696c` (sem diferenciar maiúscula de minúscula) acha 243:
+   ```js
+   const t = buffer.toString('latin1');
+   const assinado = t.includes('/ByteRange');
+   const icp = assinado && (t.includes('ICP-Brasil') || t.toLowerCase().includes('4943502d42726173696c'));
+   ```
 5. Manda lotes de até 50 pastas ou 200 arquivos, com `totalPastas`. Se uma pasta der erro de
    leitura, manda a pasta com `erro` preenchido e segue para a próxima.
 6. No fim, `POST finish` com os totais que **o robô contou**. O app confere com o que recebeu.
