@@ -6,6 +6,7 @@ import Companies from './pages/Companies';
 import CompanyDetail from './pages/CompanyDetail';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import AuditPastas from './pages/audit/Pastas';
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
             <Route path="empresas/:id" element={<CompanyDetail />} />
             <Route path="relatorios" element={<Reports />} />
             <Route path="configuracoes" element={<Settings />} />
+            <Route path="auditoria/pastas" element={<AuditPastas />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

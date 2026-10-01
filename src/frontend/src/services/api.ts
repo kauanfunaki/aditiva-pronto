@@ -3,6 +3,7 @@ import type {
   Company, Complement, GeneratedDocument,
   DashboardStats, ListResponse, PreviewResponse, CompanyStatus,
   ReportPayload, Responsavel,
+  AuditStatus, AuditJob, AuditPastasResponse, AuditAcaoVinculo,
 } from '../types';
 
 const http = axios.create({
@@ -149,6 +150,19 @@ export const renameResponsavel = (id: string, nome: string) =>
 
 export const deleteResponsavelApi = (id: string) =>
   http.delete<{ message: string }>(`/responsaveis/${id}`).then((r) => r.data);
+
+// ── Auditoria (base comum) ──────────────────────────────────────
+export const getAuditStatus = () =>
+  http.get<AuditStatus>('/audit/status').then((r) => r.data);
+
+export const requestAuditSync = () =>
+  http.post<{ job: AuditJob; criado: boolean }>('/audit/sync').then((r) => r.data);
+
+export const listAuditFolders = () =>
+  http.get<AuditPastasResponse>('/audit/folders').then((r) => r.data);
+
+export const updateAuditFolderLink = (payload: AuditAcaoVinculo) =>
+  http.put<{ message: string }>('/audit/folders/link', payload).then((r) => r.data);
 
 // ── Reports ─────────────────────────────────────────────────────
 export async function exportCompaniesReport(

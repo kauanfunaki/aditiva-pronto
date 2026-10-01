@@ -33,6 +33,7 @@ No painel do serviço `app`, vá em **Environment Variables** e adicione:
 | `IMPORT_FOLDER` | `/app/imports` |
 | `GENERATED_DIR` | `/app/generated` |
 | `TEMPLATE_PATH` | `/app/templates/termo_aditivo.docx` |
+| `AUDIT_ROBOT_TOKEN` | *(token do robô da Auditoria, 32+ caracteres — o mesmo do `.env` do robô)* |
 
 ---
 

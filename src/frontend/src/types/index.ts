@@ -102,3 +102,76 @@ export interface ReportPayload {
   search?: string;
   fields:  string[];
 }
+
+// ── Auditoria (base comum) ───────────────────────────────────────────
+
+export type AuditJobStatus = 'pendente' | 'executando' | 'concluido' | 'erro';
+
+export interface AuditJob {
+  id:                string;
+  status:            AuditJobStatus;
+  origem:            'manual' | 'agendado';
+  solicitadoEm:      string;
+  iniciadoEm:        string | null;
+  concluidoEm:       string | null;
+  roboHost:          string | null;
+  pastasTotal:       number | null;
+  pastasRecebidas:   number;
+  arquivosRecebidos: number;
+  erro:              string | null;
+}
+
+export interface AuditStatus {
+  ativo:           AuditJob | null;
+  ultimoConcluido: AuditJob | null;
+  ultimoErro:      AuditJob | null;
+  robo: {
+    host:    string;
+    versao:  string | null;
+    vistoEm: string;
+    online:  boolean;
+  } | null;
+}
+
+export interface AuditEmpresa {
+  id:          string;
+  razaoSocial: string;
+  cnpj:        string;
+  inativo?:    boolean;
+}
+
+export interface AuditSugestao extends AuditEmpresa {
+  similaridade:  number;
+  filialConfere: boolean;
+}
+
+export type AuditTipoVinculo = 'auto' | 'confirmado' | 'ignorado';
+
+export interface AuditPasta {
+  nomePasta:         string;
+  subpastasContrato: string[];
+  arquivos:          number;
+  erro:              string | null;
+  vinculo: { tipo: AuditTipoVinculo; empresa: AuditEmpresa | null } | null;
+  sugestoes:         AuditSugestao[];
+}
+
+export interface AuditPastasResponse {
+  job: AuditJob | null;
+  resumo: {
+    pastas:                 number;
+    comSubpastaContrato:    number;
+    automaticas:            number;
+    confirmadas:            number;
+    ignoradas:              number;
+    semVinculo:             number;
+    empresasAtivas:         number;
+    empresasAtivasSemPasta: number;
+  };
+  pastas: AuditPasta[];
+}
+
+export type AuditAcaoVinculo =
+  | { acao: 'vincular'; nomePasta: string; companyId: string }
+  | { acao: 'ignorar';  nomePasta: string }
+  | { acao: 'desfazer'; nomePasta: string };
