@@ -8,10 +8,13 @@ import { AppError } from '../middleware/errorHandler';
 import { logger } from '../utils/logger';
 import { deveCriarJobAgendado } from './auditAgendamento';
 import { normalizarNomePasta } from './auditNormalizacao';
-import { MAX_ARQUIVOS_POR_LOTE, MAX_PASTAS_POR_LOTE, type Lote, type VincularPasta } from './auditPayload';
 import {
-  agruparPorNome, indexarEmpresas, sugerirEmpresas, vinculoAutomatico,
-  type Sugestao,
+  MAX_ARQUIVOS_POR_LOTE, MAX_PASTAS_POR_LOTE,
+  type Lote, type MarcaSemPasta, type VincularPasta,
+} from './auditPayload';
+import {
+  agruparPorNome, indexarEmpresas, indexarPastas, sugerirEmpresas, sugerirPastas, vinculoAutomatico,
+  type Sugestao, type SugestaoDePasta,
 } from './auditVinculo';
 
 /** O robô consulta a cada ~15 s; sem contato por 2 min, a tela mostra "robô offline". */
@@ -249,39 +252,58 @@ export interface PastaAuditada {
   sugestoes: Sugestao[];
 }
 
+/** Empresa ativa sem nenhuma pasta vinculada na última sincronização. */
+export interface EmpresaSemPasta {
+  id:          string;
+  razaoSocial: string;
+  cnpj:        string;
+  responsavel: string | null;
+  /** Marcada como "sem pasta de propósito": fica fora da auditoria. */
+  marcada:     boolean;
+  motivo:      string | null;
+  marcadoEm:   Date | null;
+  /** Pastas ainda sem vínculo parecidas com a empresa (vazio quando marcada). */
+  sugestoesDePasta: SugestaoDePasta[];
+}
+
 export interface ListaDePastas {
   job: JobDTO | null;
   resumo: {
-    pastas:                 number;
-    comSubpastaContrato:    number;
-    automaticas:            number;
-    confirmadas:            number;
-    ignoradas:              number;
-    semVinculo:             number;
-    empresasAtivas:         number;
-    empresasAtivasSemPasta: number;
+    pastas:                   number;
+    comSubpastaContrato:      number;
+    automaticas:              number;
+    confirmadas:              number;
+    ignoradas:                number;
+    semVinculo:               number;
+    empresasAtivas:           number;
+    /** Sem pasta e SEM a marca — são as que ainda pedem ação. */
+    empresasAtivasSemPasta:   number;
+    empresasMarcadasSemPasta: number;
   };
-  pastas: PastaAuditada[];
+  pastas:           PastaAuditada[];
+  empresasSemPasta: EmpresaSemPasta[];
 }
 
-/** Pastas da última sincronização concluída, com vínculo e sugestões. */
+/** Pastas da última sincronização concluída, com vínculo e sugestões, e as empresas que ficaram sem pasta. */
 export async function listarPastas(): Promise<ListaDePastas> {
   const vazio: ListaDePastas = {
     job: null,
     resumo: {
-      pastas: 0, comSubpastaContrato: 0, automaticas: 0, confirmadas: 0,
-      ignoradas: 0, semVinculo: 0, empresasAtivas: 0, empresasAtivasSemPasta: 0,
+      pastas: 0, comSubpastaContrato: 0, automaticas: 0, confirmadas: 0, ignoradas: 0,
+      semVinculo: 0, empresasAtivas: 0, empresasAtivasSemPasta: 0, empresasMarcadasSemPasta: 0,
     },
     pastas: [],
+    empresasSemPasta: [],
   };
 
   const ultimo = await repo.buscarUltimoConcluido();
   if (!ultimo) return vazio;
 
-  const [pastas, vinculos, empresas] = await Promise.all([
+  const [pastas, vinculos, empresas, marcas] = await Promise.all([
     repo.listarPastasDoJob(ultimo.id),
     repo.listarVinculos(),
     repo.listarEmpresas(),
+    repo.listarMarcasSemPasta(),
   ]);
 
   const empresaPorId = new Map<string, EmpresaResumo>(
@@ -314,20 +336,56 @@ export async function listarPastas(): Promise<ListaDePastas> {
       .map((p) => p.vinculo!.empresa!.id),
   );
 
+  // Empresas ativas sem pasta: marcadas ficam fora da auditoria; as demais recebem
+  // sugestões entre as pastas que ainda não têm vínculo (nem foram ignoradas).
+  const marcaPorEmpresa = new Map(marcas.map((m) => [m.company_id, m]));
+  const pastasLivres = indexarPastas(resultado.filter((p) => !p.vinculo).map((p) => p.nomePasta));
+  const indexadaPorId = new Map(ativasIndexadas.map((e) => [e.id, e]));
+  const semPasta: EmpresaSemPasta[] = ativas
+    .filter((e) => !empresasComPasta.has(e.id))
+    .map((e) => {
+      const m = marcaPorEmpresa.get(e.id);
+      return {
+        id:               e.id,
+        razaoSocial:      e.razao_social,
+        cnpj:             e.cnpj,
+        responsavel:      e.responsavel,
+        marcada:          !!m,
+        motivo:           m?.motivo ?? null,
+        marcadoEm:        m?.marcado_em ?? null,
+        sugestoesDePasta: m ? [] : sugerirPastas(indexadaPorId.get(e.id)!, pastasLivres),
+      };
+    })
+    .sort((a, b) => Number(a.marcada) - Number(b.marcada) || a.razaoSocial.localeCompare(b.razaoSocial, 'pt-BR'));
+
   return {
     job: paraJobDTO(ultimo),
     resumo: {
-      pastas:                 resultado.length,
-      comSubpastaContrato:    resultado.filter((p) => p.subpastasContrato.length > 0).length,
-      automaticas:            resultado.filter((p) => p.vinculo?.tipo === 'auto').length,
-      confirmadas:            resultado.filter((p) => p.vinculo?.tipo === 'confirmado').length,
-      ignoradas:              resultado.filter((p) => p.vinculo?.tipo === 'ignorado').length,
-      semVinculo:             resultado.filter((p) => !p.vinculo).length,
-      empresasAtivas:         ativas.length,
-      empresasAtivasSemPasta: ativas.filter((e) => !empresasComPasta.has(e.id)).length,
+      pastas:                   resultado.length,
+      comSubpastaContrato:      resultado.filter((p) => p.subpastasContrato.length > 0).length,
+      automaticas:              resultado.filter((p) => p.vinculo?.tipo === 'auto').length,
+      confirmadas:              resultado.filter((p) => p.vinculo?.tipo === 'confirmado').length,
+      ignoradas:                resultado.filter((p) => p.vinculo?.tipo === 'ignorado').length,
+      semVinculo:               resultado.filter((p) => !p.vinculo).length,
+      empresasAtivas:           ativas.length,
+      empresasAtivasSemPasta:   semPasta.filter((e) => !e.marcada).length,
+      empresasMarcadasSemPasta: semPasta.filter((e) => e.marcada).length,
     },
-    pastas: resultado,
+    pastas:           resultado,
+    empresasSemPasta: semPasta,
   };
+}
+
+/** Marca (ou desmarca) uma empresa como "sem pasta na rede de propósito". */
+export async function alterarMarcaSemPasta(input: MarcaSemPasta, agora = new Date()): Promise<void> {
+  if (input.acao === 'desmarcar') {
+    await repo.desmarcarSemPasta(input.companyId);
+    return;
+  }
+  if (!(await repo.empresaExiste(input.companyId))) {
+    throw new AppError(404, 'Empresa não encontrada.');
+  }
+  await repo.marcarSemPasta(input.companyId, input.motivo, agora);
 }
 
 export async function alterarVinculo(input: VincularPasta, agora = new Date()): Promise<void> {
@@ -338,6 +396,8 @@ export async function alterarVinculo(input: VincularPasta, agora = new Date()): 
         throw new AppError(404, 'Empresa não encontrada.');
       }
       await repo.salvarVinculo(nomePasta, input.companyId, 'confirmado', agora);
+      // Ganhou pasta: a marca de "sem pasta" deixa de fazer sentido.
+      await repo.desmarcarSemPasta(input.companyId);
       return;
     case 'ignorar':
       await repo.salvarVinculo(nomePasta, null, 'ignorado', agora);

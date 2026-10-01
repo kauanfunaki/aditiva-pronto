@@ -73,7 +73,14 @@ export interface EmpresaRow extends RowDataPacket {
   id:           string;
   razao_social: string;
   cnpj:         string;
+  responsavel:  string | null;
   inativo:      number;
+}
+
+export interface MarcaSemPastaRow extends RowDataPacket {
+  company_id: string;
+  motivo:     string | null;
+  marcado_em: Date;
 }
 
 const COLUNAS_JOB = `
@@ -408,9 +415,30 @@ export async function listarVinculos(): Promise<VinculoRow[]> {
 
 export async function listarEmpresas(): Promise<EmpresaRow[]> {
   const [rows] = await getPool().query<EmpresaRow[]>(
-    `SELECT id, razao_social, cnpj, inativo FROM companies`,
+    `SELECT id, razao_social, cnpj, responsavel, inativo FROM companies`,
   );
   return rows;
+}
+
+// ── Empresas sem pasta (migration 004) ────────────────────────────
+
+export async function listarMarcasSemPasta(): Promise<MarcaSemPastaRow[]> {
+  const [rows] = await getPool().query<MarcaSemPastaRow[]>(
+    `SELECT company_id, motivo, marcado_em FROM au_empresas_sem_pasta`,
+  );
+  return rows;
+}
+
+export async function marcarSemPasta(companyId: string, motivo: string | null, agora: Date): Promise<void> {
+  await getPool().query(
+    `INSERT INTO au_empresas_sem_pasta (company_id, motivo, marcado_em) VALUES (?, ?, ?)
+     ON DUPLICATE KEY UPDATE motivo = VALUES(motivo), marcado_em = VALUES(marcado_em)`,
+    [companyId, motivo, agora],
+  );
+}
+
+export async function desmarcarSemPasta(companyId: string): Promise<void> {
+  await getPool().query(`DELETE FROM au_empresas_sem_pasta WHERE company_id = ?`, [companyId]);
 }
 
 export async function empresaExiste(id: string): Promise<boolean> {

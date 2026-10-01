@@ -3,7 +3,7 @@ import type {
   Company, Complement, GeneratedDocument,
   DashboardStats, ListResponse, PreviewResponse, CompanyStatus,
   ReportPayload, Responsavel,
-  AuditStatus, AuditJob, AuditPastasResponse, AuditAcaoVinculo,
+  AuditStatus, AuditJob, AuditPastasResponse, AuditAcaoVinculo, AuditAcaoSemPasta,
   AuditRelatorioAditivos, AuditFiltrosAditivos,
 } from '../types';
 
@@ -164,6 +164,9 @@ export const listAuditFolders = () =>
 
 export const updateAuditFolderLink = (payload: AuditAcaoVinculo) =>
   http.put<{ message: string }>('/audit/folders/link', payload).then((r) => r.data);
+
+export const updateAuditEmpresaSemPasta = (payload: AuditAcaoSemPasta) =>
+  http.put<{ message: string }>('/audit/companies/sem-pasta', payload).then((r) => r.data);
 
 // ── Auditoria Aditivos ──────────────────────────────────────────
 export const getAuditAditivos = (ano: number) =>

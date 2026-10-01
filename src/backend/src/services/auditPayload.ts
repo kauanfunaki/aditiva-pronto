@@ -68,6 +68,16 @@ export const vincularPastaSchema = z.discriminatedUnion('acao', [
   z.object({ acao: z.literal('desfazer'), nomePasta: z.string().trim().min(1).max(300) }),
 ]);
 
+export const marcaSemPastaSchema = z.discriminatedUnion('acao', [
+  z.object({
+    acao:      z.literal('marcar'),
+    companyId: z.string().uuid(),
+    motivo:    z.string().trim().max(300).optional().transform((m) => m || null),
+  }),
+  z.object({ acao: z.literal('desmarcar'), companyId: z.string().uuid() }),
+]);
+
+export type MarcaSemPasta = z.infer<typeof marcaSemPastaSchema>;
 export type Lote          = z.infer<typeof loteSchema>;
 export type PastaDoLote   = Lote['pastas'][number];
 export type VincularPasta = z.infer<typeof vincularPastaSchema>;
