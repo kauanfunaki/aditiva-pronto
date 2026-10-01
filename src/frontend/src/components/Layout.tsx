@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from 'react-router-dom';
-import { House, Buildings, ChartBar, GearSix } from '@phosphor-icons/react';
+import { House, Buildings, ChartBar, GearSix, FolderSimpleUser } from '@phosphor-icons/react';
 import { useTheme } from '../hooks/useTheme';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -74,6 +74,15 @@ export default function Layout() {
             <NavLink to="/configuracoes" className={navClass}>
               <GearSix size={17} weight="duotone" />
               Configurações
+            </NavLink>
+
+            {/* Auditoria — Contratos e Aditivos entram aqui nas Fases 2A/2B */}
+            <p className="mt-4 mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-zinc-500">
+              Auditoria
+            </p>
+            <NavLink to="/auditoria/pastas" className={navClass}>
+              <FolderSimpleUser size={17} weight="duotone" />
+              Vínculo de pastas
             </NavLink>
           </nav>
 

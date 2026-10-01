@@ -11,6 +11,7 @@ import { exportCompaniesReport } from '../controllers/reportController';
 import {
   getResponsaveis, postResponsavel, patchResponsavelNome, removeResponsavel,
 } from '../controllers/responsaveisController';
+import auditRoutes from './audit';
 
 const router = Router();
 
@@ -47,5 +48,8 @@ router.get('/responsaveis',        getResponsaveis);
 router.post('/responsaveis',       postResponsavel);
 router.patch('/responsaveis/:id',  patchResponsavelNome);
 router.delete('/responsaveis/:id', removeResponsavel);
+
+// ── Auditoria de Contratos e Aditivos ─────────────────────────────
+router.use('/audit', auditRoutes);
 
 export default router;

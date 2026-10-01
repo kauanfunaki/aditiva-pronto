@@ -1,8 +1,10 @@
 # Auditoria de Contratos e Aditivos — plano para alinharmos
 
 > **Para:** Angelo · **De:** Kauan · **Data:** 01/10/2026
-> **Status:** proposta para discussão. Nada aqui está implementado. As seções 10 e 11
-> listam o que precisamos decidir juntos antes de escrever código.
+> **Status:** proposta para discussão. A parte do Kauan na Fase 1 (base comum: banco, API,
+> barra de sincronização e tela de vínculo) já está implementada na branch
+> `feat/auditoria-base`, ainda sem merge e sem deploy. A seção 8 traz o contrato **como foi
+> implementado**. As seções 10 e 11 listam o que ainda precisamos decidir juntos.
 
 ---
 
@@ -204,28 +206,29 @@ outro). Dentro do próprio módulo, cada um decide sozinho.
 
 ### Fase 1 — Base compartilhada
 
-1. **Migration `003-auditoria-base.sql`**: tabelas `au_*` (seção 8.1), no mesmo estilo
-   idempotente das migrations `001`/`002`.
-2. **API do robô** (protegida por `AUDIT_ROBOT_TOKEN`): pegar job, enviar lotes, concluir/falhar.
-   O job é pego de forma atômica (`UPDATE … WHERE status='pendente' LIMIT 1`), para dois
-   robôs nunca pegarem o mesmo.
-3. **API da tela**: criar sincronização (se já houver uma pendente ou rodando, devolve
-   essa, sem criar outra), consultar o andamento e a última concluída.
-4. **Robô coletor** em `automation/auditoria/` (Node, mesmo padrão de `automation/`):
-   loop de consulta, varredura, detecção de assinatura em PDF e envio em lotes de ~200
-   arquivos. Se uma pasta der erro, ele registra e continua as outras.
-5. **Instalação no PC das automações**: serviço do Windows (NSSM) que reinicia sozinho,
-   e uma **sincronização automática diária às 06:00**, para o relatório não ficar velho
-   se ninguém clicar.
-6. **Tela de vínculo pasta ↔ empresa**: o nome igual liga sozinho, o parecido aparece como
-   sugestão. Dá para confirmar, trocar, ignorar a pasta ou marcar a empresa como "sem pasta".
-7. **Componente `<SyncBar/>`**: botão Sincronizar e estado (aguardando robô · varrendo
-   210/513 · concluído há 5 min · erro · robô offline). Os dois módulos usam o mesmo componente.
-8. **Vitest no backend.** Os classificadores das Fases 2A/2B são funções puras, testadas
-   com nomes reais tirados do inventário.
+> **Status em 01/10/2026** (branch `feat/auditoria-base`): ✅ = feito e testado · ⏳ = falta.
 
-**Pronto quando:** um clique em Sincronizar traz o inventário completo (~1.550 arquivos) em
-menos de 5 minutos, e 5 clientes conferidos à mão batem com a tela.
+1. ✅ **Migration `003-auditoria-base.sql`**: tabelas `au_*` (seção 8.1), idempotente como
+   as `001`/`002`. Testada em MySQL 8 local. **Ainda não aplicada em produção.**
+2. ✅ **API do robô** (protegida por `AUDIT_ROBOT_TOKEN`): pegar job, enviar lotes,
+   concluir/falhar. O job é pego com `UPDATE … WHERE status = 'pendente'`, para dois robôs
+   nunca pegarem o mesmo.
+3. ✅ **API da tela**: pedir sincronização (se já houver uma ativa, devolve essa), status
+   (andamento, última concluída, último erro, robô online) e vínculo de pastas.
+4. ⏳ **Robô coletor** em `automation/auditoria/` (sugestão: Angelo). O passo a passo está na
+   seção 8.4. Um robô de teste descartável, fora do repo, já validou a API contra a rede real.
+5. ⏳ **Instalação no PC das automações**: serviço do Windows (NSSM) que reinicia sozinho.
+   ✅ A **sincronização diária às 06:00** já é criada pelo app (seção 8.4), sem agendador no PC.
+6. ✅ **Tela Auditoria › Vínculo de pastas**: vínculo automático (seção 8.5), sugestões,
+   busca de empresa, confirmar/trocar/ignorar/desfazer. ⏳ Falta "marcar empresa como sem
+   pasta" (a empresa que não tem pasta na rede de propósito).
+7. ✅ **Componente `<SyncBar/>`** (`components/audit/SyncBar.tsx`): botão Sincronizar e
+   estado (aguardando robô · varrendo 210 de 513 · concluída há 5 min · erro · robô offline).
+   É o mesmo para os dois módulos.
+8. ✅ **Vitest no backend** (`npm test` em `src/backend`): 84 testes, com nomes reais do levantamento.
+
+**Pronto quando:** um clique em Sincronizar traz o inventário completo em menos de 5
+minutos (✅ ~30 s com o robô de teste) e 5 clientes conferidos à mão batem com a tela (⏳).
 
 ### Fase 2A — Auditoria Aditivos (Kauan) · em paralelo com a 2B
 
@@ -285,51 +288,81 @@ e vale para os dois módulos.
 
 ---
 
-## 8. O contrato da Base (rascunho, a fechar na Fase 0)
+## 8. O contrato da Base (implementado na branch `feat/auditoria-base`)
 
-### 8.1 Tabelas (prefixo `au_`, para não colidir com o `rs_` do Radar)
+> Atualizado em 01/10/2026 com o que foi implementado e testado contra a rede real
+> (513 pastas, 1.601 arquivos, 11 lotes, ~30 s). O que mudou em relação ao rascunho:
+> o lote usa `pastas` (não `folders`), a tela consulta `GET /status` (no lugar de
+> `/sync/:id` e `/sync/latest`) e a lista de pastas ignoradas virou vínculo do tipo `ignorado`.
+> **Mudou aqui, muda no código e no robô.** O código de referência do contrato é
+> `src/backend/src/services/auditPayload.ts`.
 
-| Tabela | Campos principais |
-|--------|-------------------|
-| `au_config` | raiz UNC, pasta inicial/final do intervalo, lista de pastas ignoradas, regra (regex) da subpasta de contrato, ano de referência |
-| `au_sync_jobs` | `id`, `status` (`pendente`/`executando`/`concluido`/`erro`), `origem` (`manual`/`agendado`), `solicitado_em`, `iniciado_em`, `concluido_em`, `robo_host`, `progresso`, `totais` (JSON), `erro` |
-| `au_robot_heartbeat` | `host`, `versao`, `visto_em` |
-| `au_folders` | `id`, `job_id`, `nome_pasta`, `subpastas_contrato` (JSON), `erro` |
-| `au_files` | `id`, `job_id`, `folder_id`, `caminho_relativo`, `nome`, `ext`, `tamanho`, `modificado_em`, `pdf_assinado` (bool), `pdf_marca` (`icp`/`null`) |
-| `au_folder_links` | `nome_pasta` (único), `company_id`, `tipo` (`auto`/`confirmado`/`ignorado`), `vinculado_por`, `vinculado_em` |
-| `au_overrides` | `modulo` (`contratos`/`aditivos`), `company_id`, `status`, `observacao`, `autor`, `criado_em` |
+### 8.1 Tabelas — `scripts/migrations/003-auditoria-base.sql`
 
-Cada job guarda um retrato completo (~1,5 mil linhas), o que permite mostrar "o que mudou
-desde a última sincronização". Guardamos os últimos 30 dias.
+| Tabela | O que guarda |
+|--------|--------------|
+| `au_config` | Linha única: `raiz_unc`, `pasta_inicial`, `pasta_final`, `regex_subpasta_contrato`, `horario_agendado` (`'06:00'`, fuso de São Paulo; `NULL` desliga). O app grava os valores padrão na primeira leitura |
+| `au_sync_jobs` | Fila: `status` (`pendente`/`executando`/`concluido`/`erro`), `origem` (`manual`/`agendado`), horários com milissegundos, `robo_host`, `pastas_total`, `pastas_recebidas`, `arquivos_recebidos`, `erro`. Uma coluna gerada `ativo` + índice único garantem **no máximo um job pendente/rodando** |
+| `au_robot_heartbeat` | `host`, `versao`, `visto_em`: último contato de cada robô |
+| `au_folders` | Pastas vistas em cada job, com `subpastas_contrato` (JSON) e `erro` |
+| `au_files` | Arquivos dentro das subpastas de contrato: `caminho_relativo`, `nome`, `ext`, `tamanho`, `modificado_em`, `pdf_assinado`, `pdf_marca` |
+| `au_folder_links` | Vínculo pasta ↔ empresa (`auto`/`confirmado`/`ignorado`). Não depende de job, então sobrevive entre sincronizações |
+
+- Nomes de pasta usam `COLLATE utf8mb4_bin`: pastas que diferem só por acento são pastas diferentes.
+- Nenhuma tabela `au_*` tem FK nem JOIN com `companies`, porque a collation dessa tabela em
+  produção não foi conferida. O cruzamento com empresas é feito em memória.
+- Cada job guarda um retrato completo. Ao concluir, apaga jobs com mais de 30 dias, sempre
+  preservando o último concluído.
+- `au_overrides` (conferência manual) **não** está na `003`. Entra na Fase 3.
+- Cada módulo cria as próprias tabelas: `004` para Aditivos e `005` para Contratos.
 
 ### 8.2 Endpoints
 
-Tela (sem token, como o resto do app hoje):
+Tela (sem token, como o resto do app):
 
 ```
-POST /api/audit/sync               → cria job (ou devolve o que já está pendente/rodando)
-GET  /api/audit/sync/:id           → status + progresso (a tela consulta a cada 3 s)
-GET  /api/audit/sync/latest        → última sincronização concluída + robô online?
-GET  /api/audit/folders            → pastas + vínculo + sugestões
-PUT  /api/audit/folders/:nome/link → vincular / ignorar
+GET  /api/audit/status        → { ativo, ultimoConcluido, ultimoErro, robo: { host, versao, vistoEm, online } }
+POST /api/audit/sync          → 201 { job, criado: true }  |  200 { job, criado: false } se já houver um ativo
+GET  /api/audit/folders       → { job, resumo, pastas: [{ nomePasta, subpastasContrato, arquivos, erro, vinculo, sugestoes }] }
+PUT  /api/audit/folders/link  → { acao: 'vincular', nomePasta, companyId } | { acao: 'ignorar', nomePasta } | { acao: 'desfazer', nomePasta }
 ```
 
-Robô (header `Authorization: Bearer <AUDIT_ROBOT_TOKEN>`):
+Robô (header `Authorization: Bearer <AUDIT_ROBOT_TOKEN>`; sem token configurado no servidor → 503):
 
 ```
-POST /api/audit/robot/next-job               → { job, config } ou 204 (também vale como sinal de vida)
-POST /api/audit/robot/jobs/:id/folders       → lote de pastas e arquivos
-POST /api/audit/robot/jobs/:id/finish        → { totais }
-POST /api/audit/robot/jobs/:id/fail          → { erro }
+POST /api/audit/robot/next-job          { host, versao? }               → 200 { job, config, limites }  |  204 nada a fazer
+POST /api/audit/robot/jobs/:id/folders  { totalPastas?, pastas: [...] } → 200 { recebidas }
+POST /api/audit/robot/jobs/:id/finish   { totais: { pastas, arquivos } } → 200 { vinculosAutomaticos }
+POST /api/audit/robot/jobs/:id/fail     { erro }                         → 200
 ```
 
-Cada módulo cria as próprias rotas de leitura (`/api/audit/aditivos/…`, `/api/audit/contratos/…`).
+Resposta do `next-job`:
+
+```json
+{
+  "job":     { "id": "c5671e13-…", "origem": "manual", "retomada": false },
+  "config":  {
+    "raizUnc": "\\\\192.168.140.249\\Contabilidade",
+    "pastaInicial": "041 CONTABILIDADE",
+    "pastaFinal": "ZANATO & CHAVES LTDA",
+    "regexSubpastaContrato": "^CONTRATOS? (DE )?(P |PREST|SERVI|HONOR)",
+    "horarioAgendado": "06:00",
+    "normalizacao": "semAcentoMaiusculo"
+  },
+  "limites": { "maxPastasPorLote": 500, "maxArquivosPorLote": 5000 }
+}
+```
+
+Códigos que o robô precisa tratar: **400** (payload inválido, com a mensagem do campo),
+**401** (token errado), **409** (o job não está mais em execução: pare a varredura),
+**422** no `finish` (os totais não batem com o que chegou, e o job vira erro).
 
 ### 8.3 Lote enviado pelo robô
 
 ```json
 {
-  "folders": [
+  "totalPastas": 513,
+  "pastas": [
     {
       "nomePasta": "ALLMETAL LTDA",
       "subpastasContrato": ["CONTRATO DE PRESTAÇÃO DE SERVIÇOS"],
@@ -344,13 +377,58 @@ Cada módulo cria as próprias rotas de leitura (`/api/audit/aditivos/…`, `/ap
           "pdf": { "assinado": true, "marca": "icp" }
         }
       ]
-    }
+    },
+    { "nomePasta": "SCANNER", "subpastasContrato": [], "arquivos": [] }
   ]
 }
 ```
 
-O robô também manda as pastas **sem** subpasta de contrato (com `subpastasContrato: []`).
-Elas precisam aparecer na tela de vínculo e no status `SEM_PASTA_CONTRATO`.
+- `modificadoEm` precisa ter fuso (`-03:00` ou `Z`). `stat.mtime.toISOString()` serve.
+- `pdf` só para `.pdf`. Para outros arquivos, omita o campo.
+- A mesma pasta não pode aparecer duas vezes no mesmo lote.
+
+### 8.4 O que o robô faz, passo a passo (para o Angelo)
+
+1. A cada ~15 s, `POST next-job` com o nome da máquina. Recebeu 204, espera e repete. Essa
+   chamada também é o sinal de vida: sem ela por 2 min, a tela mostra "robô offline".
+2. Recebeu um job: lista as pastas de `config.raizUnc` e fica com as que estão entre
+   `pastaInicial` e `pastaFinal`, **comparando os nomes já normalizados**:
+   ```js
+   const semAcentoMaiusculo = (s) =>
+     s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+   ```
+3. Em cada pasta, as subpastas de 1º nível cujo `semAcentoMaiusculo(nome)` casa com
+   `new RegExp(config.regexSubpastaContrato)` são as subpastas de contrato. Lista os
+   arquivos delas **recursivamente**. Pasta sem subpasta de contrato também vai no lote, com `[]`.
+4. PDF: lê os bytes e procura `/ByteRange` (assinado) e `ICP-Brasil` (marca `icp`).
+5. Manda lotes de até 50 pastas ou 200 arquivos, com `totalPastas`. Se uma pasta der erro de
+   leitura, manda a pasta com `erro` preenchido e segue para a próxima.
+6. No fim, `POST finish` com os totais que **o robô contou**. O app confere com o que recebeu.
+7. Erro geral (sem acesso à rede, por exemplo): `POST fail` com a mensagem.
+
+Garantias do lado do app, para o robô poder ser simples:
+- **Reenviar um lote é seguro.** O app substitui os arquivos da pasta, sem duplicar.
+- **Robô que reinicia no meio** recebe o mesmo job no próximo `next-job` (`retomada: true`)
+  e pode recomeçar do zero.
+- **Job sem lote por 15 min** vira erro sozinho. Pendente esquecido por 24 h também.
+- **Sincronização diária:** o app cria o job "agendado" na primeira consulta depois das
+  06:00. O robô não precisa de agendador próprio.
+- **Somente leitura:** o robô nunca cria, move, renomeia ou apaga nada na rede.
+
+### 8.5 Vínculo pasta ↔ empresa (regras implementadas)
+
+Liga sozinho (tipo `auto`) só em dois casos, ambos sem chute:
+1. O nome normalizado da pasta (sem acento, sem `LTDA/ME/EPP/EIRELI`, sem `(antiga …)`,
+   `&`→`E`) é igual ao de **exatamente uma** empresa ativa.
+2. A pasta é de filial ou matriz (`… - 12 FILIAL - CURITIBA-PR`, `FILIAL 02`, `01 MATRIZ`),
+   o nome sem esse trecho bate com a razão social e **só uma** empresa tem aquela ordem no
+   CNPJ (`/0012`). No teste com os dados reais, a numeração das pastas bateu com a ordem do
+   CNPJ em todos os grupos de filiais conferidos (BLD, X ONE, INOVATI, BATEL…).
+
+O resto aparece na tela **Auditoria › Vínculo de pastas** com até 3 sugestões (a filial que
+confere vem primeiro) e busca manual. Resultado com os dados de 01/10: **335 de 513 pastas
+ligadas sozinhas**, 104 das 178 restantes com sugestão. 114 das 428 empresas ativas ainda
+sem pasta.
 
 ---
 
@@ -372,17 +450,20 @@ Elas precisam aparecer na tela de vínculo e no status `SEM_PASTA_CONTRATO`.
 
 ## 10. Decisões em aberto
 
+> As decisões 1, 2, 8 e 9 já foram **implementadas como sugerido** na Fase 1, para o trabalho
+> andar. Todas dá para mudar: se você discordar, a gente conversa antes do merge.
+
 | # | Pergunta | Minha sugestão |
 |---|----------|----------------|
-| 1 | O robô fala com a API ou direto com o MySQL? | API (seção 4) |
-| 2 | Um botão Sincronizar atualiza os dois módulos ou cada um tem o seu? | Uma varredura atualiza os dois, e o botão aparece nas duas telas |
+| 1 | O robô fala com a API ou direto com o MySQL? | API (seção 4). ✅ Implementado assim |
+| 2 | Um botão Sincronizar atualiza os dois módulos ou cada um tem o seu? | Uma varredura atualiza os dois, e o botão aparece nas duas telas. ✅ Implementado assim (`<SyncBar/>`) |
 | 3 | O que é "aditivo em dia"? | Arquivo do ano de referência (configurável). Na Fase 4, ler a data de dentro do documento |
 | 4 | "ASS" no nome sem assinatura embutida conta como assinado? | Conta, mas com status próprio (`ASSINADO_PELO_NOME`) para dar para filtrar |
 | 5 | O Termo Aditivo 13º conta como o aditivo do ano? | Não, é um tipo separado e não fecha a pendência |
 | 6 | Filial: o contrato/aditivo fica na pasta da filial ou na da matriz? | Perguntar ao Societário. Isso muda a regra das 65 pastas de filial |
 | 7 | Qual PC roda o robô, com qual conta? Ele alcança o app pela VPN? | Verificar na Fase 0 |
-| 8 | Sincronização automática? | Sim, diária às 06:00, além do botão |
-| 9 | Quem faz o quê na Fase 1? | Angelo: o robô coletor (é independente e só depende do JSON da seção 8.3). Kauan: migration, API e `<SyncBar/>`. Os dois juntos: a tela de vínculo |
+| 8 | Sincronização automática? | Sim, diária às 06:00, além do botão. ✅ Implementado (`au_config.horario_agendado`; `NULL` desliga) |
+| 9 | Quem faz o quê na Fase 1? | Angelo: o robô coletor (é independente e só depende do JSON da seção 8.3). Kauan: migration, API e `<SyncBar/>`. ✅ A parte do Kauan está pronta, e também uma 1ª versão da tela de vínculo, que era "os dois juntos": revisa e mexe à vontade |
 
 ## 11. Perguntas para você, Angelo
 
