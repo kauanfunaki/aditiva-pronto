@@ -70,6 +70,8 @@ export interface RelatorioContratos {
     empresas:  number;
     emDia:     number;
     revisar:   number;
+    /** Marcadas como "sem pasta na rede de propósito": ficam fora do relatório. */
+    marcadasSemPasta: number;
     porStatus: Record<StatusContrato, number>;
   };
   empresas: EmpresaContrato[];
@@ -102,16 +104,17 @@ export async function montarRelatorioContratos(): Promise<RelatorioContratos> {
   const vazio: RelatorioContratos = {
     job: null,
     raizUnc: config.raizUnc,
-    resumo: { empresas: 0, emDia: 0, revisar: 0, porStatus: porStatusZerado() },
+    resumo: { empresas: 0, emDia: 0, revisar: 0, marcadasSemPasta: 0, porStatus: porStatusZerado() },
     empresas: [],
   };
   if (!ultimo) return vazio;
 
-  const [pastas, vinculos, arquivos, empresas] = await Promise.all([
+  const [pastas, vinculos, arquivos, todasAtivas, marcas] = await Promise.all([
     baseRepo.listarPastasDoJob(ultimo.id),
     baseRepo.listarVinculos(),
     repo.listarArquivosDoJob(ultimo.id),
     repo.listarEmpresasAtivas(),
+    baseRepo.listarMarcasSemPasta(),
   ]);
 
   const arquivosPorPasta = new Map<string, ArquivoParaClassificarContrato[]>();
@@ -142,6 +145,12 @@ export async function montarRelatorioContratos(): Promise<RelatorioContratos> {
     });
     pastasPorEmpresa.set(vinculo.company_id, lista);
   }
+
+  // Segue a regra da Base: marcada como "sem pasta" e de fato sem vínculo fica
+  // fora da auditoria. Se ganhar uma pasta depois, volta ao relatório normalmente.
+  const marcadas = new Set(marcas.map((marca) => marca.company_id));
+  const foraDaAuditoria = (id: string) => marcadas.has(id) && !pastasPorEmpresa.has(id);
+  const empresas = todasAtivas.filter((empresa) => !foraDaAuditoria(empresa.id));
 
   const ordem = new Map(STATUS_CONTRATO.map((s, i) => [s, i]));
   const linhas: EmpresaContrato[] = empresas.map((empresa) => {
@@ -183,6 +192,7 @@ export async function montarRelatorioContratos(): Promise<RelatorioContratos> {
       empresas: linhas.length,
       emDia: linhas.filter((l) => l.emDia).length,
       revisar: linhas.filter((l) => l.status === 'REVISAR').length,
+      marcadasSemPasta: todasAtivas.length - empresas.length,
       porStatus,
     },
     empresas: linhas,

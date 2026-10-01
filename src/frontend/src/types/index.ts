@@ -314,6 +314,7 @@ export interface AuditRelatorioContratos {
     empresas:  number;
     emDia:     number;
     revisar:   number;
+    marcadasSemPasta: number;
     porStatus: Record<AuditStatusContrato, number>;
   };
   empresas: AuditEmpresaContrato[];

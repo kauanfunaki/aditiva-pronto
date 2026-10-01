@@ -192,6 +192,11 @@ export default function Contratos() {
                 <WarningCircle size={16} weight="fill" aria-hidden /> {resumo.revisar} empresa(s) precisam de revisão manual.
               </p>
             )}
+            {resumo.marcadasSemPasta > 0 && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">
+                {resumo.marcadasSemPasta} empresa(s) marcadas como “sem pasta de propósito” estão fora deste relatório.
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-1 mb-3" role="group" aria-label="Filtrar por status">
