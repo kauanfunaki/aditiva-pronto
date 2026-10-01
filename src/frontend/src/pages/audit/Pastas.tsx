@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   MagnifyingGlass, X, FolderSimple, FolderSimpleDashed, CheckCircle, Lightning,
@@ -9,6 +10,7 @@ import { useToast } from '../../context/ToastContext';
 import { maskCNPJ } from '../../utils/validators';
 import { SyncBar } from '../../components/audit/SyncBar';
 import { EmpresaPicker } from '../../components/audit/EmpresaPicker';
+import { EmpresasSemPasta } from '../../components/audit/EmpresasSemPasta';
 import type { AuditAcaoVinculo, AuditPasta, AuditPastasResponse } from '../../types';
 
 // Vínculo pasta ↔ empresa (base comum da Auditoria).
@@ -44,6 +46,16 @@ const BTN_ACAO = 'btn-outline min-h-[44px] px-3 py-1.5 whitespace-nowrap';
 export default function Pastas() {
   const qc        = useQueryClient();
   const { toast } = useToast();
+
+  const [params, setParams]   = useSearchParams();
+  const aba = params.get('aba') === 'empresas' ? 'empresas' : 'pastas';
+  const trocarAba = (nova: 'pastas' | 'empresas') =>
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (nova === 'empresas') next.set('aba', 'empresas');
+      else next.delete('aba');
+      return next;
+    }, { replace: true });
 
   const [filtro, setFiltro]   = useState<Filtro>('sem');
   const [busca, setBusca]     = useState('');
@@ -121,8 +133,38 @@ export default function Pastas() {
               {r.empresasAtivasSemPasta.toLocaleString('pt-BR')} de {r.empresasAtivas.toLocaleString('pt-BR')} empresas
               ativas ainda sem pasta
             </strong>
+            {r.empresasMarcadasSemPasta > 0 && (
+              <> · {r.empresasMarcadasSemPasta.toLocaleString('pt-BR')} marcada(s) sem pasta, fora da auditoria</>
+            )}
           </p>
 
+          {/* ── Abas ── */}
+          <div className="flex gap-1 border-b border-gray-200 dark:border-zinc-800 mb-5" role="tablist" aria-label="Visão">
+            {([
+              ['pastas',   `Pastas na rede (${r.pastas})`],
+              ['empresas', `Empresas sem pasta (${r.empresasAtivasSemPasta})`],
+            ] as const).map(([id, rotulo]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={aba === id}
+                onClick={() => trocarAba(id)}
+                className={`px-4 py-2.5 min-h-[44px] -mb-px border-b-2 text-sm font-medium transition-colors ${
+                  aba === id
+                    ? 'border-brand-600 text-brand-700 dark:border-brand-400 dark:text-brand-300'
+                    : 'border-transparent text-gray-500 dark:text-zinc-400 hover:text-gray-800 dark:hover:text-zinc-200'
+                }`}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
+
+          {aba === 'empresas' ? (
+            <EmpresasSemPasta empresas={data.empresasSemPasta} />
+          ) : (
+          <>
           {/* ── Filtros ── */}
           <div className="flex flex-col lg:flex-row gap-3 mb-4">
             <div className="flex flex-wrap gap-1 bg-gray-100 dark:bg-zinc-800 rounded-lg p-1" role="group" aria-label="Filtrar pastas">
@@ -270,6 +312,8 @@ export default function Pastas() {
                 Mostrar mais ({visiveis.length - limite} restantes)
               </button>
             </div>
+          )}
+          </>
           )}
         </>
       )}

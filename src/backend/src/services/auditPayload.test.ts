@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loteSchema, MAX_ARQUIVOS_POR_LOTE, vincularPastaSchema } from './auditPayload';
+import { loteSchema, marcaSemPastaSchema, MAX_ARQUIVOS_POR_LOTE, vincularPastaSchema } from './auditPayload';
 
 const arquivo = (n = 1) => ({
   caminhoRelativo: `CONTRATO DE PRESTAÇÃO DE SERVIÇOS/ALLMETAL - Termo Aditivo ${n}.PDF`,
@@ -81,5 +81,23 @@ describe('vincularPastaSchema', () => {
     expect(vincularPastaSchema.safeParse({ acao: 'ignorar', nomePasta: 'SCANNER' }).success).toBe(true);
     expect(vincularPastaSchema.safeParse({ acao: 'desfazer', nomePasta: 'SCANNER' }).success).toBe(true);
     expect(vincularPastaSchema.safeParse({ acao: 'apagar', nomePasta: 'SCANNER' }).success).toBe(false);
+  });
+});
+
+describe('marcaSemPastaSchema', () => {
+  const id = '0b6e2f7a-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
+
+  it('marcar aceita motivo opcional e troca vazio por null', () => {
+    expect(marcaSemPastaSchema.parse({ acao: 'marcar', companyId: id })).toMatchObject({ motivo: null });
+    expect(marcaSemPastaSchema.parse({ acao: 'marcar', companyId: id, motivo: '   ' })).toMatchObject({ motivo: null });
+    expect(marcaSemPastaSchema.parse({ acao: 'marcar', companyId: id, motivo: ' MEI, sem contrato ' }))
+      .toMatchObject({ motivo: 'MEI, sem contrato' });
+  });
+
+  it('recusa empresa sem uuid, motivo longo e ação desconhecida', () => {
+    expect(marcaSemPastaSchema.safeParse({ acao: 'marcar', companyId: '1' }).success).toBe(false);
+    expect(marcaSemPastaSchema.safeParse({ acao: 'marcar', companyId: id, motivo: 'x'.repeat(301) }).success).toBe(false);
+    expect(marcaSemPastaSchema.safeParse({ acao: 'apagar', companyId: id }).success).toBe(false);
+    expect(marcaSemPastaSchema.safeParse({ acao: 'desmarcar', companyId: id }).success).toBe(true);
   });
 });

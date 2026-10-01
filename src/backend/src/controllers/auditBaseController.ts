@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { AppError } from '../middleware/errorHandler';
 import {
-  concluirSchema, falharSchema, loteSchema, proximoJobSchema,
+  concluirSchema, falharSchema, loteSchema, marcaSemPastaSchema, proximoJobSchema,
   resumirErroZod, vincularPastaSchema,
 } from '../services/auditPayload';
 import * as audit from '../services/auditSyncService';
@@ -50,6 +50,14 @@ export async function putFolderLink(req: Request, res: Response, next: NextFunct
   try {
     await audit.alterarVinculo(validar(vincularPastaSchema, req.body));
     res.json({ message: 'Vínculo atualizado.' });
+  } catch (err) { next(err); }
+}
+
+// PUT /api/audit/companies/sem-pasta
+export async function putEmpresaSemPasta(req: Request, res: Response, next: NextFunction) {
+  try {
+    await audit.alterarMarcaSemPasta(validar(marcaSemPastaSchema, req.body));
+    res.json({ message: 'Empresa atualizada.' });
   } catch (err) { next(err); }
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  agruparPorNome, filialDaPasta, indexarEmpresas, nomeBaseDaPasta, ordemDoCnpj,
-  sugerirEmpresas, vinculoAutomatico,
+  agruparPorNome, filialDaPasta, indexarEmpresas, indexarPastas, nomeBaseDaPasta, ordemDoCnpj,
+  sugerirEmpresas, sugerirPastas, vinculoAutomatico,
 } from './auditVinculo';
 
 const empresas = indexarEmpresas([
@@ -89,5 +89,52 @@ describe('sugerirEmpresas', () => {
     expect(sugerirEmpresas('ALLMETAL LTDA', empresas, 1)).toHaveLength(1);
     expect(sugerirEmpresas('CERTIFICADOS', empresas)).toEqual([]);
     expect(sugerirEmpresas('', empresas)).toEqual([]);
+  });
+});
+
+describe('sugerirPastas (empresa → pasta)', () => {
+  const pastas = indexarPastas([
+    'BLD LOGÍSTICA LTDA - 12 FILIAL - CURITIBA-PR',
+    'BLD LOGÍSTICA LTDA - 15 FILIAL - MAFRA-SC',
+    'BLD EXPRESS LTDA',
+    'ALLMETAL LTDA',
+    'SCANNER',
+  ]);
+  const empresa = (id: string) => empresas.find((e) => e.id === id)!;
+
+  it('põe primeiro a pasta da filial com a mesma ordem do CNPJ', () => {
+    const s = sugerirPastas(empresa('bld-15'), pastas);
+    expect(s[0]).toMatchObject({ nomePasta: 'BLD LOGÍSTICA LTDA - 15 FILIAL - MAFRA-SC', filialConfere: true });
+    expect(s.some((p) => p.nomePasta === 'SCANNER')).toBe(false);
+  });
+
+  it('sugere pelo nome quando não é filial', () => {
+    expect(sugerirPastas(empresa('allmetal'), pastas)[0]).toMatchObject({ nomePasta: 'ALLMETAL LTDA', filialConfere: false });
+  });
+
+  it('não sugere nada parecido de menos', () => {
+    expect(sugerirPastas(empresa('cea'), pastas)).toEqual([]);
+  });
+});
+
+describe('filial só desempata entre nomes praticamente iguais (caso real AJL × MH EXPRESS)', () => {
+  const ajl = indexarEmpresas([
+    { id: 'ajl-02', razaoSocial: 'AJL TRANSPORTES EXPRESS LTDA', cnpj: '38.075.242/0002-06' },
+    { id: 'mh-01',  razaoSocial: 'MH EXPRESS TRANSPORTES LTDA',  cnpj: '55.555.555/0001-55' },
+  ]);
+
+  it('empresa → pasta: a pasta de mesmo nome vence a de outra empresa com o mesmo número de filial', () => {
+    const s = sugerirPastas(ajl[0], indexarPastas([
+      'MH EXPRESS TRANSPORTES LTDA - 02 FILIAL SP (baixada)',
+      'AJL TRANSPORTES EXPRESS LTDA',
+    ]));
+    expect(s[0]).toMatchObject({ nomePasta: 'AJL TRANSPORTES EXPRESS LTDA' });
+    expect(s.find((p) => p.nomePasta.startsWith('MH'))?.filialConfere).toBe(false);
+  });
+
+  it('pasta → empresa: idem', () => {
+    const s = sugerirEmpresas('MH EXPRESS TRANSPORTES LTDA - 02 FILIAL SP', ajl);
+    expect(s[0].id).toBe('mh-01');
+    expect(s.find((e) => e.id === 'ajl-02')?.filialConfere ?? false).toBe(false);
   });
 });

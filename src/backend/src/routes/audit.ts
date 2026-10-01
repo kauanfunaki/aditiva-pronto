@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { robotAuth } from '../middleware/robotAuth';
 import {
-  getStatus, postSync, getFolders, putFolderLink,
+  getStatus, postSync, getFolders, putFolderLink, putEmpresaSemPasta,
   postNextJob, postLote, postFinish, postFail,
 } from '../controllers/auditBaseController';
 
@@ -15,6 +15,7 @@ router.get('/status',        getStatus);
 router.post('/sync',         postSync);
 router.get('/folders',       getFolders);
 router.put('/folders/link',  putFolderLink);
+router.put('/companies/sem-pasta', putEmpresaSemPasta);
 
 // ── Robô coletor (Authorization: Bearer <AUDIT_ROBOT_TOKEN>) ──────
 router.post('/robot/next-job',          robotAuth, postNextJob);

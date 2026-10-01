@@ -156,20 +156,37 @@ export interface AuditPasta {
   sugestoes:         AuditSugestao[];
 }
 
+export interface AuditEmpresaSemPasta {
+  id:          string;
+  razaoSocial: string;
+  cnpj:        string;
+  responsavel: string | null;
+  marcada:     boolean;
+  motivo:      string | null;
+  marcadoEm:   string | null;
+  sugestoesDePasta: { nomePasta: string; similaridade: number; filialConfere: boolean }[];
+}
+
 export interface AuditPastasResponse {
   job: AuditJob | null;
   resumo: {
-    pastas:                 number;
-    comSubpastaContrato:    number;
-    automaticas:            number;
-    confirmadas:            number;
-    ignoradas:              number;
-    semVinculo:             number;
-    empresasAtivas:         number;
-    empresasAtivasSemPasta: number;
+    pastas:                   number;
+    comSubpastaContrato:      number;
+    automaticas:              number;
+    confirmadas:              number;
+    ignoradas:                number;
+    semVinculo:               number;
+    empresasAtivas:           number;
+    empresasAtivasSemPasta:   number;
+    empresasMarcadasSemPasta: number;
   };
-  pastas: AuditPasta[];
+  pastas:           AuditPasta[];
+  empresasSemPasta: AuditEmpresaSemPasta[];
 }
+
+export type AuditAcaoSemPasta =
+  | { acao: 'marcar'; companyId: string; motivo?: string }
+  | { acao: 'desmarcar'; companyId: string };
 
 export type AuditAcaoVinculo =
   | { acao: 'vincular'; nomePasta: string; companyId: string }
@@ -222,6 +239,7 @@ export interface AuditRelatorioAditivos {
     emDia:                 number;
     porStatus:             Record<AuditStatusAditivo, number>;
     geradoNoAppSemArquivo: number;
+    marcadasSemPasta:      number;
   };
   empresas: AuditEmpresaAditivo[];
 }

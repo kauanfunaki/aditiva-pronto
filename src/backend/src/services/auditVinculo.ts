@@ -88,9 +88,76 @@ export function vinculoAutomatico(
   return mesmaFilial.length === 1 ? mesmaFilial[0].id : null;
 }
 
+export interface PastaIndexada {
+  nomePasta: string;
+  nomeBase:  string;
+  filial:    number | null;
+}
+
+export interface SugestaoDePasta {
+  nomePasta:     string;
+  similaridade:  number;
+  filialConfere: boolean;
+}
+
+export function indexarPastas(nomes: string[]): PastaIndexada[] {
+  return nomes.map((nomePasta) => ({
+    nomePasta,
+    nomeBase: nomeBaseDaPasta(nomePasta),
+    filial:   filialDaPasta(nomePasta),
+  }));
+}
+
+/**
+ * A filial só desempata entre candidatas com nome praticamente igual ao da melhor
+ * (até MARGEM_FILIAL abaixo dela). Sem isso, "MH EXPRESS TRANSPORTES - 02 FILIAL"
+ * passava na frente de "AJL TRANSPORTES EXPRESS" (100%) só porque a AJL é a filial 0002.
+ */
+export const MARGEM_FILIAL = 0.05;
+
+function ordenarComFilial<T>(
+  candidatas: { item: T; s: number; bate: boolean }[],
+  desempate: (a: T, b: T) => number,
+): { item: T; s: number; bate: boolean }[] {
+  if (!candidatas.length) return [];
+  const melhor = Math.max(...candidatas.map((c) => c.s));
+  return candidatas
+    .map((c) => ({ ...c, bate: c.bate && c.s >= melhor - MARGEM_FILIAL }))
+    .sort((x, y) => Number(y.bate) - Number(x.bate) || y.s - x.s || desempate(x.item, y.item));
+}
+
+/**
+ * O caminho inverso de `sugerirEmpresas`: até `limite` pastas parecidas com a
+ * empresa, entre as que ainda não têm vínculo. Entre pastas de nome praticamente
+ * igual, a de filial cujo número bate com a ordem do CNPJ da empresa vem primeiro.
+ */
+export function sugerirPastas(
+  empresa: EmpresaIndexada,
+  pastas: PastaIndexada[],
+  limite = 3,
+  minimo = 0.6,
+): SugestaoDePasta[] {
+  if (!empresa.nomeNormalizado) return [];
+  const candidatas = pastas
+    .map((p) => ({
+      item: p,
+      s:    similaridade(empresa.nomeNormalizado, p.nomeBase),
+      bate: p.filial !== null && p.filial === empresa.ordemCnpj,
+    }))
+    .filter(({ s }) => s >= minimo);
+  return ordenarComFilial(candidatas, (a, b) => a.nomePasta.localeCompare(b.nomePasta))
+    .slice(0, limite)
+    .map(({ item: p, s, bate }) => ({
+      nomePasta:     p.nomePasta,
+      similaridade:  Math.round(s * 100) / 100,
+      filialConfere: bate,
+    }));
+}
+
 /**
  * Até `limite` empresas parecidas com a pasta. A comparação usa o nome sem o
- * trecho da filial; empresa cuja ordem do CNPJ bate com a filial vem primeiro.
+ * trecho da filial; entre empresas de nome praticamente igual (matriz e filiais),
+ * a que tem a ordem do CNPJ igual ao número da filial vem primeiro.
  */
 export function sugerirEmpresas(
   nomePasta: string,
@@ -102,17 +169,16 @@ export function sugerirEmpresas(
   if (!alvo) return [];
   const filial = filialDaPasta(nomePasta);
 
-  return empresas
+  const candidatas = empresas
     .map((e) => ({
-      e,
-      s:      similaridade(alvo, e.nomeNormalizado),
-      bate:   filial !== null && e.ordemCnpj === filial,
+      item: e,
+      s:    similaridade(alvo, e.nomeNormalizado),
+      bate: filial !== null && e.ordemCnpj === filial,
     }))
-    .filter(({ s }) => s >= minimo)
-    .sort((x, y) =>
-      Number(y.bate) - Number(x.bate) || y.s - x.s || x.e.razaoSocial.localeCompare(y.e.razaoSocial))
+    .filter(({ s }) => s >= minimo);
+  return ordenarComFilial(candidatas, (a, b) => a.razaoSocial.localeCompare(b.razaoSocial))
     .slice(0, limite)
-    .map(({ e, s, bate }) => ({
+    .map(({ item: e, s, bate }) => ({
       id:            e.id,
       razaoSocial:   e.razaoSocial,
       cnpj:          e.cnpj,
