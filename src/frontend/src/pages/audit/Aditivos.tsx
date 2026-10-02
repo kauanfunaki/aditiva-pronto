@@ -31,6 +31,13 @@ const STATUS: { id: AuditStatusAditivo; rotulo: string; classe: string }[] = [
 ];
 const STATUS_POR_ID = Object.fromEntries(STATUS.map((s) => [s.id, s])) as Record<AuditStatusAditivo, (typeof STATUS)[number]>;
 
+const ROTULO_13: Record<NonNullable<AuditEmpresaAditivo['decimoTerceiro']>['situacao'], string> = {
+  ASSINADO_DIGITAL:   'Assinado',
+  ASSINADO_PELO_NOME: 'Assinado (nome)',
+  PDF_SEM_ASSINATURA: 'Sem assinatura',
+  SO_DOCX:            'Só o Word',
+};
+
 const ROTULO_ASSINATURA: Record<string, string> = {
   digital:       'Assinatura digital',
   pelo_nome:     'Assinado (pelo nome)',
@@ -43,8 +50,15 @@ type FiltroStatus = NonNullable<AuditFiltrosAditivos['status']>;
 
 const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
-function passa(e: AuditEmpresaAditivo, status: FiltroStatus | '', responsavel: string, busca: string, soAlerta: boolean) {
+type FiltroDecimo = '' | 'com' | 'pendente';
+
+function passa(
+  e: AuditEmpresaAditivo, status: FiltroStatus | '', responsavel: string, busca: string,
+  soAlerta: boolean, decimo: FiltroDecimo,
+) {
   if (soAlerta && !e.alertas.length) return false;
+  if (decimo === 'com' && !e.decimoTerceiro) return false;
+  if (decimo === 'pendente' && (!e.decimoTerceiro || e.decimoTerceiro.assinado)) return false;
   if (status === 'em_dia' && !e.emDia) return false;
   if (status === 'pendente' && e.emDia) return false;
   if (status && status !== 'em_dia' && status !== 'pendente' && e.status !== status) return false;
@@ -88,6 +102,8 @@ export default function Aditivos() {
   const responsavel = params.get('responsavel') ?? '';
   const busca       = params.get('busca') ?? '';
   const soAlerta    = params.get('alerta') === '1';
+  const decimoParam = params.get('decimo');
+  const decimo: FiltroDecimo = decimoParam === 'com' || decimoParam === 'pendente' ? decimoParam : '';
 
   const [limite, setLimite]       = useState(PASSO);
   const [abertas, setAbertas]     = useState<Set<string>>(new Set());
@@ -115,8 +131,8 @@ export default function Aditivos() {
   }
 
   const visiveis = useMemo(
-    () => (data?.empresas ?? []).filter((e) => passa(e, status, responsavel, busca.trim(), soAlerta)),
-    [data, status, responsavel, busca, soAlerta],
+    () => (data?.empresas ?? []).filter((e) => passa(e, status, responsavel, busca.trim(), soAlerta, decimo)),
+    [data, status, responsavel, busca, soAlerta, decimo],
   );
 
   function alternar(id: string) {
@@ -146,6 +162,7 @@ export default function Aditivos() {
         responsavel: responsavel || undefined,
         busca:       busca.trim() || undefined,
         alerta:      soAlerta ? '1' : undefined,
+        decimo:      decimo || undefined,
       });
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Erro ao exportar.', 'error');
@@ -172,9 +189,10 @@ export default function Aditivos() {
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-zinc-100">Auditoria de aditivos</h1>
           <p className="text-sm text-gray-500 dark:text-zinc-400 mt-0.5 max-w-3xl">
-            Para cada empresa ativa, se o termo aditivo de {ano} está na pasta de rede e em que estado.
-            Conta como em dia o aditivo assinado digitalmente ou com “assinado” no nome. O termo de 13º
-            sozinho não fecha a pendência.
+            Para cada empresa ativa, se o termo aditivo anual de {ano} está na pasta de rede e em que estado.
+            Conta como em dia o aditivo assinado digitalmente ou com “assinado” no nome. O termo de 13º só
+            existe para algumas empresas: quando está na pasta, aparece na coluna 13º; quando não está, não é
+            pendência. Sozinho, ele não substitui o anual.
           </p>
         </div>
         <button
@@ -236,6 +254,36 @@ export default function Aditivos() {
                 {r.geradoNoAppSemArquivo} empresa(s) com aditivo gerado no app em {ano} que não está na pasta
                 {soAlerta ? ' · mostrando só elas' : ''}
               </button>
+            )}
+            {r.decimoTerceiro.empresas > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-gray-600 dark:text-zinc-400">
+                <span>
+                  Termo de 13º de {ano}: {r.decimoTerceiro.empresas} empresa(s) têm,{' '}
+                  {r.decimoTerceiro.assinados} com assinatura. Quem não tem 13º não fica pendente.
+                </span>
+                <button
+                  type="button"
+                  aria-pressed={decimo === 'com'}
+                  onClick={() => setParam('decimo', decimo === 'com' ? null : 'com')}
+                  className={`rounded-md px-2 py-1 min-h-[36px] ${decimo === 'com'
+                    ? 'bg-brand-50 text-brand-800 dark:bg-brand-900/30 dark:text-brand-200'
+                    : 'text-brand-700 dark:text-brand-300 hover:bg-gray-100 dark:hover:bg-zinc-800'}`}
+                >
+                  Ver quem tem 13º
+                </button>
+                {r.decimoTerceiro.empresas > r.decimoTerceiro.assinados && (
+                  <button
+                    type="button"
+                    aria-pressed={decimo === 'pendente'}
+                    onClick={() => setParam('decimo', decimo === 'pendente' ? null : 'pendente')}
+                    className={`rounded-md px-2 py-1 min-h-[36px] ${decimo === 'pendente'
+                      ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200'
+                      : 'text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40'}`}
+                  >
+                    Ver {r.decimoTerceiro.empresas - r.decimoTerceiro.assinados} com 13º sem assinatura
+                  </button>
+                )}
+              </div>
             )}
             {r.marcadasSemPasta > 0 && (
               <p className="mt-2 text-xs text-gray-500 dark:text-zinc-400">
@@ -324,6 +372,7 @@ export default function Aditivos() {
                   <th scope="col" className="table-head w-8"><span className="sr-only">Detalhes</span></th>
                   <th scope="col" className="table-head">Empresa</th>
                   <th scope="col" className="table-head">Situação</th>
+                  <th scope="col" className="table-head">13º</th>
                   <th scope="col" className="table-head text-right">Aditivos de {ano}</th>
                   <th scope="col" className="table-head text-right">Gerados no app</th>
                   <th scope="col" className="table-head"><span className="sr-only">Ações</span></th>
@@ -332,14 +381,14 @@ export default function Aditivos() {
               <tbody>
                 {visiveis.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-5 py-10 text-center text-gray-500 dark:text-zinc-400">
+                    <td colSpan={7} className="px-5 py-10 text-center text-gray-500 dark:text-zinc-400">
                       Nenhuma empresa neste filtro.
                     </td>
                   </tr>
                 )}
                 {visiveis.slice(0, limite).map((e) => {
                   const aberta = abertas.has(e.empresa.id);
-                  const temArquivos = e.aditivosDoAno.length + e.outrosAditivos.length > 0;
+                  const temArquivos = e.aditivosDoAno.length + e.outrosAditivos.length + (e.decimoTerceiro?.arquivos.length ?? 0) > 0;
                   return (
                     <Fragment key={e.empresa.id}>
                       <tr className="border-b border-gray-50 dark:border-zinc-800 align-top">
@@ -373,13 +422,24 @@ export default function Aditivos() {
                             {!e.emDia && e.ultimoAnoComAditivo && e.ultimoAnoComAditivo !== ano && (
                               <p>Último aditivo encontrado: {e.ultimoAnoComAditivo}</p>
                             )}
-                            {!e.emDia && e.temDecimoTerceiroDoAno && <p>Tem só o termo de 13º em {ano}</p>}
+                            {e.status === 'SEM_ADITIVO' && e.decimoTerceiro && <p>Tem só o termo de 13º em {ano}</p>}
                             {e.alertas.includes('gerado_no_app_sem_arquivo') && (
                               <p className="flex items-center gap-1 text-amber-700 dark:text-amber-300">
                                 <WarningCircle size={12} weight="fill" aria-hidden /> Gerado no app, mas não está na pasta
                               </p>
                             )}
                           </div>
+                        </td>
+                        <td className="px-5 py-3">
+                          {e.decimoTerceiro ? (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${STATUS_POR_ID[e.decimoTerceiro.situacao].classe}`}>
+                              {ROTULO_13[e.decimoTerceiro.situacao]}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 dark:text-zinc-500">
+                              <span aria-hidden>—</span><span className="sr-only">Não tem termo de 13º</span>
+                            </span>
+                          )}
                         </td>
                         <td className="px-5 py-3 text-right tabular-nums text-gray-700 dark:text-zinc-300">{e.aditivosDoAno.length}</td>
                         <td className="px-5 py-3 text-right tabular-nums text-gray-700 dark:text-zinc-300">{e.geradosNoApp}</td>
@@ -402,10 +462,15 @@ export default function Aditivos() {
                       {aberta && (
                         <tr className="border-b border-gray-50 dark:border-zinc-800 bg-gray-50/60 dark:bg-zinc-900/60">
                           <td />
-                          <td colSpan={5} className="px-5 py-3">
-                            <ListaArquivos titulo={`Aditivos que valem para ${ano}`} arquivos={e.aditivosDoAno} />
+                          <td colSpan={6} className="px-5 py-3">
+                            <ListaArquivos titulo={`Aditivo anual de ${ano}`} arquivos={e.aditivosDoAno} />
+                            {e.decimoTerceiro && (
+                              <div className="mt-3">
+                                <ListaArquivos titulo={`Termo de 13º de ${ano}`} arquivos={e.decimoTerceiro.arquivos} />
+                              </div>
+                            )}
                             {e.outrosAditivos.length > 0 && (
-                              <ListaArquivos titulo="Outros aditivos (outros anos ou só 13º)" arquivos={e.outrosAditivos} apagado />
+                              <ListaArquivos titulo="Aditivos de outros anos" arquivos={e.outrosAditivos} apagado />
                             )}
                           </td>
                         </tr>
