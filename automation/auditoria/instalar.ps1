@@ -65,6 +65,14 @@ if (Get-ScheduledTask -TaskName $tarefa -ErrorAction SilentlyContinue) {
 } else {
   Write-Host '    Primeira instalação.'
 }
+# Parar a tarefa encerra só o wscript; o cmd e o node que ele abriu continuam vivos,
+# segurando o logs\robo.log. Sem isto, a versão antiga segue rodando e a nova não sobe.
+$lancadores = @(Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" |
+  Where-Object { $_.CommandLine -like '*index.js*logs\robo.log*' })
+$robos = @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
+  Where-Object { $lancadores.ProcessId -contains $_.ParentProcessId })
+foreach ($p in $robos + $lancadores) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }
+if ($robos.Count) { Write-Host "    Robô antigo encerrado ($($robos.Count) processo(s) do Node)." }
 
 Passo "3/7 Copiando os arquivos para $destino"
 robocopy $origem $destino /E /XF .env instalar.ps1 LEIA-ME.txt /XD logs /NFL /NDL /NJH /NJS | Out-Null
@@ -119,13 +127,20 @@ Write-Host "    Tarefa '$tarefa' criada: liga no logon de $usuario e reinicia a 
 
 Passo '7/7 Ligando o robô'
 Start-ScheduledTask -TaskName $tarefa
-Start-Sleep -Seconds 8
-$info = Get-ScheduledTask -TaskName $tarefa | Get-ScheduledTaskInfo
-$estado = (Get-ScheduledTask -TaskName $tarefa).State
+$estado = $null
+for ($i = 0; $i -lt 10; $i++) {
+  Start-Sleep -Seconds 2
+  $estado = (Get-ScheduledTask -TaskName $tarefa).State
+  if ($estado -eq 'Running' -and $i -ge 3) { break }
+}
 Write-Host "    Estado da tarefa: $estado (Running = rodando)"
+if ($estado -ne 'Running') {
+  $info = Get-ScheduledTask -TaskName $tarefa | Get-ScheduledTaskInfo
+  Write-Host "    O robô não ficou rodando (último resultado: $($info.LastTaskResult)). Veja o log abaixo." -ForegroundColor Red
+}
 if (Test-Path "$destino\logs\robo.log") {
   Write-Host '    Últimas linhas do log:'
-  Get-Content "$destino\logs\robo.log" -Tail 5 | ForEach-Object { Write-Host "      $_" }
+  Get-Content "$destino\logs\robo.log" -Tail 5 -Encoding UTF8 | ForEach-Object { Write-Host "      $_" }
 }
 
 Write-Host ''
