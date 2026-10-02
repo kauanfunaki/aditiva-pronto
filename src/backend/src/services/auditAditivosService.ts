@@ -6,6 +6,10 @@ import { utils, write } from 'xlsx';
 import * as base from '../repositories/auditRepository';
 import * as repo from '../repositories/auditAditivosRepository';
 import { paraJobDTO, type JobDTO } from './auditSyncService';
+import {
+  arquivoEmDistrato, ehSubpastaDistrato, paraDistratoDTO, textoDoDistrato, type DistratoDTO,
+} from './auditDistrato';
+import { carregarDistratos } from './auditDistratoService';
 import { classificarAditivo, type ArquivoParaClassificar } from './auditAditivosClassificador';
 import {
   calcularStatusAditivo, STATUS_ADITIVO,
@@ -22,6 +26,7 @@ export const ROTULO_STATUS: Record<StatusAditivo, string> = {
   PDF_SEM_ASSINATURA: 'PDF sem assinatura',
   ASSINADO_PELO_NOME: 'Assinado (pelo nome)',
   ASSINADO_DIGITAL:   'Assinado digitalmente',
+  DISTRATO:           'Distrato',
 };
 
 export type AlertaAditivo = 'gerado_no_app_sem_arquivo';
@@ -53,6 +58,8 @@ export interface EmpresaAditivo {
   geradosNoApp:           number;
   ultimoGeradoNoApp:      Date | null;
   alertas:                AlertaAditivo[];
+  /** Distrato da prestação de serviços (tira das pendências) e avisos de BPO/social. */
+  distrato:               DistratoDTO | null;
 }
 
 export interface RelatorioAditivos {
@@ -69,6 +76,8 @@ export interface RelatorioAditivos {
     marcadasSemPasta:      number;
     /** Empresas com termo de 13º no ano, e quantas delas com o 13º assinado. */
     decimoTerceiro:        { empresas: number; assinados: number };
+    /** Empresas com distrato: ficam na lista, mas fora das pendências e do percentual. */
+    distratos:             number;
   };
   empresas: EmpresaAditivo[];
 }
@@ -106,7 +115,7 @@ export async function montarRelatorioAditivos(anoReferencia: number): Promise<Re
     job: null, anoReferencia, anosDisponiveis: [anoReferencia], raizUnc: config.raizUnc,
     resumo: {
       empresas: 0, emDia: 0, porStatus: porStatusZerado(), geradoNoAppSemArquivo: 0, marcadasSemPasta: 0,
-      decimoTerceiro: { empresas: 0, assinados: 0 },
+      decimoTerceiro: { empresas: 0, assinados: 0 }, distratos: 0,
     },
     empresas: [],
   };
@@ -124,6 +133,7 @@ export async function montarRelatorioAditivos(anoReferencia: number): Promise<Re
   // Arquivos agrupados por pasta.
   const arquivosPorPasta = new Map<string, ArquivoParaClassificar[]>();
   for (const a of arquivos) {
+    if (arquivoEmDistrato(a.caminho_relativo)) continue; // distrato tem regra própria
     const lista = arquivosPorPasta.get(a.nome_pasta) ?? [];
     lista.push({
       nome:            a.nome,
@@ -146,7 +156,7 @@ export async function montarRelatorioAditivos(anoReferencia: number): Promise<Re
     const lista = pastasPorEmpresa.get(v.company_id) ?? [];
     lista.push({
       nomePasta:         p.nome_pasta,
-      subpastasContrato: Array.isArray(p.subpastas_contrato) ? p.subpastas_contrato : [],
+      subpastasContrato: (Array.isArray(p.subpastas_contrato) ? p.subpastas_contrato : []).filter((s) => !ehSubpastaDistrato(s)),
       arquivos:          arquivosPorPasta.get(p.nome_pasta) ?? [],
     });
     pastasPorEmpresa.set(v.company_id, lista);
@@ -158,18 +168,24 @@ export async function montarRelatorioAditivos(anoReferencia: number): Promise<Re
   const foraDaAuditoria = (id: string) => marcadas.has(id) && !pastasPorEmpresa.has(id);
   const empresas = todasAtivas.filter((e) => !foraDaAuditoria(e.id));
 
+  const distratos = await carregarDistratos(arquivos, new Map(
+    [...pastasPorEmpresa].map(([id, ps]) => [id, ps.map((p) => p.nomePasta)]),
+  ));
+
   const ordem = new Map(STATUS_ADITIVO.map((s, i) => [s, i]));
   const linhas: EmpresaAditivo[] = empresas.map((e) => {
     const suas = pastasPorEmpresa.get(e.id) ?? [];
     const r = calcularStatusAditivo(suas, anoReferencia);
     const g = gerados.get(e.id);
+    const d = distratos.get(e.id) ?? null;
+    const comDistrato = !!d?.efetivo;
     const alertas: AlertaAditivo[] = [];
-    if (g && r.aditivosDoAno.length === 0) alertas.push('gerado_no_app_sem_arquivo');
+    if (g && r.aditivosDoAno.length === 0 && !comDistrato) alertas.push('gerado_no_app_sem_arquivo');
 
     return {
       empresa:                { id: e.id, razaoSocial: e.razao_social, cnpj: e.cnpj, responsavel: e.responsavel },
-      status:                 r.status,
-      emDia:                  r.emDia,
+      status:                 comDistrato ? 'DISTRATO' : r.status,
+      emDia:                  comDistrato ? false : r.emDia,
       pastas:                 suas.map((p) => ({ nomePasta: p.nomePasta, subpastasContrato: p.subpastasContrato })),
       aditivosDoAno:          r.aditivosDoAno.map(resumirArquivo),
       outrosAditivos:         r.outrosAditivos.map(resumirArquivo),
@@ -180,6 +196,7 @@ export async function montarRelatorioAditivos(anoReferencia: number): Promise<Re
       geradosNoApp:           g?.qtd ?? 0,
       ultimoGeradoNoApp:      g?.ultimo ?? null,
       alertas,
+      distrato:               paraDistratoDTO(d),
     };
   });
   linhas.sort((a, b) =>
@@ -213,6 +230,7 @@ export async function montarRelatorioAditivos(anoReferencia: number): Promise<Re
         empresas:  linhas.filter((l) => l.decimoTerceiro).length,
         assinados: linhas.filter((l) => l.decimoTerceiro?.assinado).length,
       },
+      distratos: porStatus.DISTRATO,
     },
     empresas: linhas,
   };
@@ -241,7 +259,7 @@ export function filtrarEmpresas(empresas: EmpresaAditivo[], f: FiltrosAditivos):
     if (f.decimo === 'com' && !e.decimoTerceiro) return false;
     if (f.decimo === 'pendente' && (!e.decimoTerceiro || e.decimoTerceiro.assinado)) return false;
     if (f.status === 'em_dia' && !e.emDia) return false;
-    if (f.status === 'pendente' && e.emDia) return false;
+    if (f.status === 'pendente' && (e.emDia || e.status === 'DISTRATO')) return false;
     if (f.status && f.status !== 'em_dia' && f.status !== 'pendente' && e.status !== f.status) return false;
     if (f.responsavel === '__none__' && e.empresa.responsavel) return false;
     if (f.responsavel && f.responsavel !== '__none__' && e.empresa.responsavel !== f.responsavel) return false;
@@ -270,7 +288,7 @@ export function gerarXlsxAditivos(rel: RelatorioAditivos, empresas: EmpresaAditi
     'Empresa', 'CNPJ', 'Responsável', 'Status', 'Em dia',
     'Pasta(s) na rede', `Aditivos de ${rel.anoReferencia}`, 'Arquivos',
     'Último ano com aditivo', `13º de ${rel.anoReferencia}`,
-    `Gerados no app em ${rel.anoReferencia}`, 'Alerta',
+    `Gerados no app em ${rel.anoReferencia}`, 'Alerta', 'Distrato',
   ];
   const linhas = empresas.map((e) => [
     e.empresa.razaoSocial,
@@ -285,6 +303,7 @@ export function gerarXlsxAditivos(rel: RelatorioAditivos, empresas: EmpresaAditi
     e.decimoTerceiro ? ROTULO_STATUS[e.decimoTerceiro.situacao] : '',
     e.geradosNoApp,
     e.alertas.includes('gerado_no_app_sem_arquivo') ? 'Gerado no app, mas não está na pasta' : '',
+    textoDoDistrato(e.distrato),
   ]);
 
   const ws = utils.aoa_to_sheet([cabecalho, ...linhas]);

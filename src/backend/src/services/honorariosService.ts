@@ -11,6 +11,8 @@ import { classificarAditivo } from './auditAditivosClassificador';
 import { atualizarLeiturasAntigas, chaveDoArquivo, EXTENSOES_COM_TEXTO, mesmaVersao } from './auditTextosService';
 import { paraJobDTO, type JobDTO } from './auditSyncService';
 import { tipoDoDocumento, type FormaLeitura, type TipoDocumento } from './honorarioLeitor';
+import { arquivoEmDistrato, paraDistratoDTO, type DistratoDTO } from './auditDistrato';
+import { carregarDistratos } from './auditDistratoService';
 import {
   compararComAcessorias, escolherHonorario, minutaPeloNome, situacaoDoHonorario, SITUACOES_HONORARIO,
   type AlertaHonorario, type ComparacaoAcessorias, type DocumentoDaEmpresa, type EstadoTexto,
@@ -54,6 +56,8 @@ export interface EmpresaHonorario {
     situacao:      string | null;
   };
   ultimoEnvio: { enviadoEm: Date; conta: string; valorEnviado: number; status: 'ok' | 'erro'; erro: string | null } | null;
+  /** Distrato da prestação de serviços (situação DISTRATO, não envia) e avisos de BPO/social. */
+  distrato:    DistratoDTO | null;
 }
 
 export interface RelatorioHonorarios {
@@ -121,6 +125,9 @@ export async function montarRelatorioHonorarios(): Promise<RelatorioHonorarios> 
   const textos = { documentos: 0, lidos: 0, pendentes: 0, semTexto: 0 };
   const docsPorPasta = new Map<string, DocumentoDaEmpresa[]>();
   for (const a of arquivos) {
+    // O distrato tem cláusula de pagamento final ("R$ … a título de serviços prestados"):
+    // não é fonte de honorário. Ele entra pela regra própria (auditDistrato).
+    if (arquivoEmDistrato(a.caminho_relativo)) continue;
     const ext = a.ext.toLowerCase();
     const comTexto = EXTENSOES_COM_TEXTO.has(ext);
     if (!comTexto && !IMAGENS.has(ext)) continue;
@@ -166,6 +173,7 @@ export async function montarRelatorioHonorarios(): Promise<RelatorioHonorarios> 
 
   const marcadas = new Set(marcas.map((m) => m.company_id));
   const empresas = ativas.filter((e) => !(marcadas.has(e.id) && !pastasPorEmpresa.has(e.id)));
+  const distratos = await carregarDistratos(arquivos, pastasPorEmpresa);
 
   const linhas: EmpresaHonorario[] = empresas.map((e) => {
     const docs = (pastasPorEmpresa.get(e.id) ?? []).flatMap((p) => docsPorPasta.get(p) ?? []);
@@ -179,7 +187,10 @@ export async function montarRelatorioHonorarios(): Promise<RelatorioHonorarios> 
 
     const escolha = escolherHonorario(docs);
     const m = manualPorEmpresa.get(e.id);
-    const { situacao, alertas } = situacaoDoHonorario(docs, escolha, !!m);
+    const d = distratos.get(e.id) ?? null;
+    const calculada = situacaoDoHonorario(docs, escolha, !!m);
+    const situacao: SituacaoHonorario = d?.efetivo ? 'DISTRATO' : calculada.situacao;
+    const alertas = d?.efetivo ? [] : calculada.alertas;
     const manual = m
       ? { valor: Number(m.valor), documento: m.documento, observacao: m.observacao, informadoPor: m.informado_por, informadoEm: m.informado_em }
       : null;
@@ -206,6 +217,7 @@ export async function montarRelatorioHonorarios(): Promise<RelatorioHonorarios> 
       ultimoEnvio: env
         ? { enviadoEm: env.enviado_em, conta: env.conta, valorEnviado: Number(env.valor_enviado), status: env.status, erro: env.erro }
         : null,
+      distrato: paraDistratoDTO(d),
     };
   });
 

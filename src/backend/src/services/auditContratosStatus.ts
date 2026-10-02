@@ -18,6 +18,8 @@ export const STATUS_CONTRATO = [
   'AGUARDANDO_ASSINATURA',
   'REVISAR',
   'ASSINADO',
+  // Não sai de calcularStatusContrato: o serviço aplica quando a empresa tem distrato (auditDistrato).
+  'DISTRATO',
 ] as const;
 
 export type StatusContrato = (typeof STATUS_CONTRATO)[number];
@@ -33,7 +35,8 @@ export type MotivoStatusContrato =
   | 'FORMATO_EXIGE_REVISAO'
   | 'CONTRATO_DIGITAL_ASSINADO'
   | 'PDF_SEM_ASSINATURA'
-  | 'APENAS_MINUTA';
+  | 'APENAS_MINUTA'
+  | 'DISTRATO_PRESTACAO';
 
 export interface PastaParaStatusContrato {
   nomePasta:         string;

@@ -347,7 +347,7 @@ e vale para os dois módulos.
   que não tem pasta na rede de propósito. Fica fora da auditoria nos dois módulos.
 - A Fase 2A não precisou de tabela, então a `004` ficou com a base. `005` continua
   reservada para Contratos, e `006` para a conferência manual (Fase 3). `007` é o login e
-  `008` os honorários (seção 12).
+  `008` os honorários (seção 12). `009` inclui as subpastas de distrato na varredura (12.5).
 
 ### 8.2 Endpoints
 
@@ -479,8 +479,8 @@ sem pasta.
 - **Branches:** `feat/auditoria-base`, `feat/auditoria-aditivos`, `feat/auditoria-contratos`.
   PR para a `main` sempre revisado pelo outro.
 - **Migrations com número reservado:** `003` e `004` são da Base, `005` dos Contratos
-  (Angelo), `006` da conferência manual (Fase 3), `007` do login e `008` dos honorários.
-  A próxima livre é a `009`. Isso evita dois números iguais criados no mesmo dia.
+  (Angelo), `006` da conferência manual (Fase 3), `007` do login, `008` dos honorários e
+  `009` do distrato. A próxima livre é a `010`. Isso evita dois números iguais criados no mesmo dia.
 - **Banco compartilhado com o Radar Societário:** nada de `DROP`/`ALTER` fora das tabelas
   `au_*`. Migration sempre idempotente, como as atuais.
 - **A rede é somente leitura.** O robô nunca cria, move, renomeia ou apaga nada em
@@ -576,4 +576,32 @@ sem pasta.
 - Proteções (ADR-009): só empresa que já existe lá; ficha lida antes e depois; outro campo mudou =
   envios travados até alguém conferir; lote só depois de um envio individual limpo; cada envio
   registrado com a conta, o IP e a ficha de antes e de depois (`au_acessorias_envios`).
+
+### 12.5 Distrato (migration 009)
+
+- **Onde fica:** numa subpasta própria da pasta do cliente, ao lado da do contrato. Levantamento
+  de 02/10/2026: 31 subpastas, sendo 28 da prestação de serviços contábeis ("DISTRATO DE PRESTAÇÃO
+  DE SERVIÇOS", "DISTRATO PRESTAÇÃO SERVIÇOS CONTABEIS", "DISTRATO"…), 2 "DISTRATO BPO" e 1
+  "DISTRATO SOCIAL" (dissolução da empresa).
+- **Varredura:** a regex de `au_config` passou a `^(CONTRATOS? (DE )?(P |PREST|SERVI|HONOR)|DISTRATO)`
+  (migration `009`). Chega ao robô em cada job: não precisa reinstalar. Os arquivos dessas
+  subpastas não entram na classificação de aditivo nem como fonte de honorário.
+- **Leitura** (`services/auditDistrato.ts`): tipo pela subpasta (contábil, BPO, social), assinatura
+  (PDF ou nome), data de fim ("executará seus serviços até 31/07/2026", 81 dos 84 com texto) e data
+  do documento. Boleto, comprovante e recibo da subpasta não contam.
+- **Efeito (decisões do Kauan em 02/10):** distrato contábil põe a empresa em **"Distrato"** em
+  Aditivos, Contratos e Honorários: fora das pendências e do percentual, sem envio de honorário ao
+  Acessórias. Contrato mais novo que o distrato = cliente voltou, distrato desconsiderado (aviso).
+  BPO e social são só aviso. Acessórias fica para depois.
+- **Teste com a rede real (02/10):** 22 empresas ativas com distrato (6 sem assinatura), 2
+  desconsiderados (FERTHUB, JULLI), avisos de BPO (SAF, LEONARDO) e social (HARD ROCK).
+- **Para o Angelo:** em Contratos entrou o status `DISTRATO` (motivo `DISTRATO_PRESTACAO`),
+  aplicado no serviço depois do `calcularStatusContrato`; a função pura não mudou.
+
+### 12.6 Sugestão de pasta com nome cortado
+
+A tela de vínculo agora sugere a pasta quando o nome dela é o começo da razão social (ou o
+contrário), com pelo menos 3 palavras, e quando há sigla antes do " - " (caso real:
+"SINCOPEÇAS - SINDICATO DO COMERCIO VAREJISTA, ATACADISTA" para a razão social de 130+ letras).
+Só afeta a **sugestão** (nota 0,9); o vínculo automático continua exigindo nome igual.
 

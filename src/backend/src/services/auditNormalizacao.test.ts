@@ -31,6 +31,14 @@ describe('regex padrão da subpasta do contrato', () => {
     'CONTRATO P SERVIÇOS - BLINDAGEM',
     'CONTRATO PREST SERVIÇOS',
     'contrato de prestação de serviços',
+    // Distrato (02/10/2026): as grafias achadas na rede.
+    'DISTRATO DE PRESTAÇÃO DE SERVIÇOS',
+    'DISTRATO PRESTAÇÃO DE SERVIÇOS',
+    'DISTRATO PRESTAÇÃO SERVIÇOS CONTABEIS',
+    'DISTRATO DE PRESTAÇÃO DE SERVIÇOS CONTABEIS',
+    'DISTRATO BPO',
+    'DISTRATO SOCIAL',
+    'DISTRATO',
   ])('aceita "%s"', (nome) => {
     expect(ehSubpastaDeContrato(nome)).toBe(true);
   });
