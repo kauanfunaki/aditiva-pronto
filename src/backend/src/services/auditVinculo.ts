@@ -35,11 +35,12 @@ export function ordemDoCnpj(cnpj: string): number | null {
 
 /**
  * Número da filial escrito no nome da pasta. "MATRIZ" conta como 1 (ordem 0001).
- * "BLD LOGÍSTICA LTDA - 12 FILIAL - CURITIBA-PR" → 12 · "MH EXPRESS FILIAL 0002" → 2.
+ * "BLD LOGÍSTICA LTDA - 12 FILIAL - CURITIBA-PR" → 12 · "MH EXPRESS FILIAL 0002" → 2 ·
+ * "BLD LOGISTICA LTDA - 21 - FILIAL PARANAGUÁ" → 21 (traço entre o número e FILIAL).
  */
 export function filialDaPasta(nomePasta: string): number | null {
   const nome = semAcentoMaiusculo(nomePasta);
-  const m = /\b(\d{1,4})\s*[ºª]?\s*FILIAL\b/.exec(nome) ?? /\bFILIAL\s*(\d{1,4})\b/.exec(nome);
+  const m = /\b(\d{1,4})\s*[ºª]?\s*(?:[-–]\s*)?FILIAL\b/.exec(nome) ?? /\bFILIAL\s*(\d{1,4})\b/.exec(nome);
   if (m) return parseInt(m[1], 10);
   return /\bMATRIZ\b/.test(nome) ? 1 : null;
 }
