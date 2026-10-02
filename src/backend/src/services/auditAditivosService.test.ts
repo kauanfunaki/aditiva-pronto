@@ -12,7 +12,7 @@ function empresa(
     status,
     emDia: status === 'ASSINADO_DIGITAL' || status === 'ASSINADO_PELO_NOME',
     pastas: extra.pasta ? [{ nomePasta: extra.pasta, subpastasContrato: [] }] : [],
-    aditivosDoAno: [], outrosAditivos: [], ultimoAnoComAditivo: null, temDecimoTerceiroDoAno: false,
+    aditivosDoAno: [], outrosAditivos: [], ultimoAnoComAditivo: null, decimoTerceiro: null,
     geradosNoApp: 0, ultimoGeradoNoApp: null,
     alertas: extra.alerta ? ['gerado_no_app_sem_arquivo'] : [],
   };
@@ -53,5 +53,21 @@ describe('filtrarEmpresas', () => {
 
   it('só com alerta', () => {
     expect(nomes(filtrarEmpresas(lista, { soAlerta: true }))).toEqual(['41 CONSULTORIA LTDA']);
+  });
+});
+
+describe('filtrarEmpresas — 13º', () => {
+  const com13 = (nome: string, assinado: boolean): EmpresaAditivo => ({
+    ...empresa(nome, 'ASSINADO_DIGITAL'),
+    decimoTerceiro: { situacao: assinado ? 'ASSINADO_DIGITAL' : 'PDF_SEM_ASSINATURA', assinado, arquivos: [] },
+  });
+  const l = [com13('A', true), com13('B', false), empresa('C', 'ASSINADO_DIGITAL')];
+
+  it('"com" traz só quem tem 13º no ano; quem não tem não é pendência', () => {
+    expect(nomes(filtrarEmpresas(l, { decimo: 'com' }))).toEqual(['A', 'B']);
+  });
+
+  it('"pendente" traz só quem tem 13º ainda sem assinatura', () => {
+    expect(nomes(filtrarEmpresas(l, { decimo: 'pendente' }))).toEqual(['B']);
   });
 });

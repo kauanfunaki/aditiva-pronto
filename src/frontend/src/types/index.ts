@@ -223,7 +223,11 @@ export interface AuditEmpresaAditivo {
   aditivosDoAno:          AuditArquivoAditivo[];
   outrosAditivos:         AuditArquivoAditivo[];
   ultimoAnoComAditivo:    number | null;
-  temDecimoTerceiroDoAno: boolean;
+  decimoTerceiro: {
+    situacao: Exclude<AuditStatusAditivo, 'SEM_VINCULO' | 'SEM_PASTA_CONTRATO' | 'SEM_ADITIVO'>;
+    assinado: boolean;
+    arquivos: AuditArquivoAditivo[];
+  } | null;
   geradosNoApp:           number;
   ultimoGeradoNoApp:      string | null;
   alertas:                'gerado_no_app_sem_arquivo'[];
@@ -240,6 +244,7 @@ export interface AuditRelatorioAditivos {
     porStatus:             Record<AuditStatusAditivo, number>;
     geradoNoAppSemArquivo: number;
     marcadasSemPasta:      number;
+    decimoTerceiro:        { empresas: number; assinados: number };
   };
   empresas: AuditEmpresaAditivo[];
 }
@@ -250,4 +255,5 @@ export interface AuditFiltrosAditivos {
   responsavel?: string;
   busca?:       string;
   alerta?:      '1';
+  decimo?:      'com' | 'pendente';
 }
