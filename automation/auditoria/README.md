@@ -22,7 +22,8 @@ por inteiro; por isso, esse comando não é um dry run.
 
 ## O que é enviado
 
-- nome da pasta e das subpastas de contrato reconhecidas pela configuração do app;
+- nome da pasta e das subpastas de contrato reconhecidas pela configuração do app (desde a
+  migration 009, também as subpastas de DISTRATO);
 - caminho relativo, nome, extensão, tamanho e data de modificação dos arquivos;
 - para PDFs, presença de assinatura digital (`/ByteRange`) e marca ICP-Brasil;
 - **texto dos PDF e DOCX** das subpastas de contrato das pastas vinculadas a uma empresa, para o

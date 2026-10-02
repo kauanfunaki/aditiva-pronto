@@ -9,6 +9,7 @@ import { getAuditAditivos, exportAuditAditivos, listResponsaveis } from '../../s
 import { useToast } from '../../context/ToastContext';
 import { maskCNPJ } from '../../utils/validators';
 import { SyncBar } from '../../components/audit/SyncBar';
+import { AvisoDistrato, CLASSE_DISTRATO } from '../../components/audit/AvisoDistrato';
 import type {
   AuditArquivoAditivo, AuditEmpresaAditivo, AuditFiltrosAditivos, AuditStatusAditivo,
 } from '../../types';
@@ -28,6 +29,7 @@ const STATUS: { id: AuditStatusAditivo; rotulo: string; classe: string }[] = [
   { id: 'PDF_SEM_ASSINATURA', rotulo: 'PDF sem assinatura',       classe: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' },
   { id: 'ASSINADO_PELO_NOME', rotulo: 'Assinado (pelo nome)',     classe: 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300' },
   { id: 'ASSINADO_DIGITAL',   rotulo: 'Assinado digitalmente',    classe: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' },
+  { id: 'DISTRATO',           rotulo: 'Distrato',                 classe: CLASSE_DISTRATO },
 ];
 const STATUS_POR_ID = Object.fromEntries(STATUS.map((s) => [s.id, s])) as Record<AuditStatusAditivo, (typeof STATUS)[number]>;
 
@@ -60,7 +62,7 @@ function passa(
   if (decimo === 'com' && !e.decimoTerceiro) return false;
   if (decimo === 'pendente' && (!e.decimoTerceiro || e.decimoTerceiro.assinado)) return false;
   if (status === 'em_dia' && !e.emDia) return false;
-  if (status === 'pendente' && e.emDia) return false;
+  if (status === 'pendente' && (e.emDia || e.status === 'DISTRATO')) return false;
   if (status && status !== 'em_dia' && status !== 'pendente' && e.status !== status) return false;
   if (responsavel === '__none__' && e.empresa.responsavel) return false;
   if (responsavel && responsavel !== '__none__' && e.empresa.responsavel !== responsavel) return false;
@@ -172,11 +174,13 @@ export default function Aditivos() {
   }
 
   const r = data?.resumo;
-  const pctEmDia = r && r.empresas ? Math.round((r.emDia / r.empresas) * 100) : 0;
+  // Empresa com distrato fica na lista, mas fora das pendências e do percentual.
+  const baseEmDia = r ? r.empresas - r.distratos : 0;
+  const pctEmDia = r && baseEmDia ? Math.round((r.emDia / baseEmDia) * 100) : 0;
   const chips: { id: FiltroStatus | ''; rotulo: string; qtd: number }[] = r
     ? [
         { id: '',         rotulo: 'Todas',     qtd: r.empresas },
-        { id: 'pendente', rotulo: 'Pendentes', qtd: r.empresas - r.emDia },
+        { id: 'pendente', rotulo: 'Pendentes', qtd: baseEmDia - r.emDia },
         { id: 'em_dia',   rotulo: 'Em dia',    qtd: r.emDia },
         ...STATUS.map((s) => ({ id: s.id, rotulo: s.rotulo, qtd: r.porStatus[s.id] })),
       ]
@@ -229,13 +233,13 @@ export default function Aditivos() {
             <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
               <p className="text-gray-800 dark:text-zinc-200">
                 <span className="text-3xl font-bold tabular-nums">{r.emDia.toLocaleString('pt-BR')}</span>
-                <span className="text-sm text-gray-500 dark:text-zinc-400"> de {r.empresas.toLocaleString('pt-BR')} empresas em dia com o aditivo de {ano}</span>
+                <span className="text-sm text-gray-500 dark:text-zinc-400"> de {baseEmDia.toLocaleString('pt-BR')} empresas em dia com o aditivo de {ano}</span>
               </p>
               <span className="text-2xl font-semibold tabular-nums text-gray-700 dark:text-zinc-300">{pctEmDia}%</span>
             </div>
             <div
               className="h-2 w-full rounded-full bg-gray-100 dark:bg-zinc-800 overflow-hidden"
-              role="progressbar" aria-label="Empresas em dia" aria-valuemin={0} aria-valuemax={r.empresas} aria-valuenow={r.emDia}
+              role="progressbar" aria-label="Empresas em dia" aria-valuemin={0} aria-valuemax={baseEmDia} aria-valuenow={r.emDia}
             >
               <div className="h-full bg-green-600 dark:bg-green-500" style={{ width: `${pctEmDia}%` }} />
             </div>
@@ -284,6 +288,11 @@ export default function Aditivos() {
                   </button>
                 )}
               </div>
+            )}
+            {r.distratos > 0 && (
+              <p className="mt-2 text-xs text-gray-500 dark:text-zinc-400">
+                {r.distratos} empresa(s) com distrato da prestação de serviços: aparecem como “Distrato” e ficam fora das pendências.
+              </p>
             )}
             {r.marcadasSemPasta > 0 && (
               <p className="mt-2 text-xs text-gray-500 dark:text-zinc-400">
@@ -429,6 +438,7 @@ export default function Aditivos() {
                               </p>
                             )}
                           </div>
+                          <AvisoDistrato distrato={e.distrato} />
                         </td>
                         <td className="px-5 py-3">
                           {e.decimoTerceiro ? (

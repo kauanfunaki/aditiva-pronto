@@ -187,6 +187,7 @@ async function enviarLinha(l: EmpresaHonorario, conta: string, ip: string | null
   const cnpjDigitos = soDigitos(l.empresa.cnpj);
   const valor = l.valor;
   if (valor === null) return { ...base, status: 'ignorado', mensagem: 'Sem honorário para enviar.' };
+  if (l.situacao === 'DISTRATO') return { ...base, status: 'ignorado', mensagem: 'Empresa com distrato: honorário não enviado.' };
 
   const registrar = (d: Partial<repo.NovoEnvio> & Pick<repo.NovoEnvio, 'status'>) => repo.registrarEnvio({
     companyId: l.empresa.id, cnpjDigitos, razaoSocial: l.empresa.razaoSocial,
@@ -255,6 +256,9 @@ async function enviarLinha(l: EmpresaHonorario, conta: string, ip: string | null
 function linhaParaEnvio(rel: Awaited<ReturnType<typeof montarRelatorioHonorarios>>, companyId: string, valorEsperado: number) {
   const l = rel.empresas.find((e) => e.empresa.id === companyId);
   if (!l) throw new AppError(404, 'Empresa não encontrada no relatório de honorários.');
+  if (l.situacao === 'DISTRATO') {
+    throw new AppError(400, `${l.empresa.razaoSocial} tem distrato da prestação de serviços: o honorário não é enviado.`);
+  }
   if (l.valor === null) throw new AppError(400, `${l.empresa.razaoSocial} não tem honorário para enviar.`);
   // O valor confirmado pela pessoa na tela precisa ser o mesmo que o servidor calcula agora.
   if (Math.abs(l.valor - valorEsperado) >= 0.005) {

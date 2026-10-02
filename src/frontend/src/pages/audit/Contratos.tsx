@@ -13,6 +13,7 @@ import type {
   AuditMotivoContrato, AuditStatusContrato,
 } from '../../types';
 import { maskCNPJ } from '../../utils/validators';
+import { AvisoDistrato, CLASSE_DISTRATO } from '../../components/audit/AvisoDistrato';
 
 const PASSO = 100;
 
@@ -22,6 +23,7 @@ const STATUS: { id: AuditStatusContrato; rotulo: string; classe: string }[] = [
   { id: 'AGUARDANDO_ASSINATURA', rotulo: 'Aguardando assinatura',   classe: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' },
   { id: 'REVISAR',               rotulo: 'Revisar',                 classe: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300' },
   { id: 'ASSINADO',              rotulo: 'Assinado',                classe: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' },
+  { id: 'DISTRATO',              rotulo: 'Distrato',                classe: CLASSE_DISTRATO },
 ];
 const STATUS_POR_ID = Object.fromEntries(STATUS.map((s) => [s.id, s])) as Record<AuditStatusContrato, (typeof STATUS)[number]>;
 
@@ -38,6 +40,7 @@ const MOTIVO: Record<AuditMotivoContrato, string> = {
   CONTRATO_DIGITAL_ASSINADO: 'Assinatura digital detectada',
   PDF_SEM_ASSINATURA: 'PDF sem assinatura digital',
   APENAS_MINUTA: 'Somente arquivo editável ou minuta',
+  DISTRATO_PRESTACAO: 'Distrato da prestação de serviços',
 };
 
 type FiltroStatus = NonNullable<AuditFiltrosContratos['status']>;
@@ -45,7 +48,7 @@ const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLo
 
 function passa(item: AuditEmpresaContrato, status: FiltroStatus | '', responsavel: string, busca: string) {
   if (status === 'em_dia' && !item.emDia) return false;
-  if (status === 'pendente' && item.emDia) return false;
+  if (status === 'pendente' && (item.emDia || item.status === 'DISTRATO')) return false;
   if (status === 'assinado_digital' && item.motivo !== 'CONTRATO_DIGITAL_ASSINADO') return false;
   if (status === 'assinado_pelo_nome' && item.motivo !== 'CONTRATO_ASSINADO_PELO_NOME') return false;
   if (status && !['em_dia', 'pendente', 'assinado_digital', 'assinado_pelo_nome'].includes(status)
@@ -139,10 +142,12 @@ export default function Contratos() {
   }
 
   const resumo = data?.resumo;
-  const percentual = resumo?.empresas ? Math.round((resumo.emDia / resumo.empresas) * 100) : 0;
+  // Empresa com distrato fica na lista, mas fora das pendências e do percentual.
+  const baseEmDia = resumo ? resumo.empresas - resumo.distratos : 0;
+  const percentual = baseEmDia ? Math.round(((resumo?.emDia ?? 0) / baseEmDia) * 100) : 0;
   const chips: { id: FiltroStatus | ''; rotulo: string; qtd: number }[] = resumo ? [
     { id: '', rotulo: 'Todas', qtd: resumo.empresas },
-    { id: 'pendente', rotulo: 'Pendentes', qtd: resumo.empresas - resumo.emDia },
+    { id: 'pendente', rotulo: 'Pendentes', qtd: baseEmDia - resumo.emDia },
     { id: 'em_dia', rotulo: 'Em dia', qtd: resumo.emDia },
     { id: 'assinado_digital', rotulo: 'Assinado digital', qtd: data?.empresas.filter((e) => e.motivo === 'CONTRATO_DIGITAL_ASSINADO').length ?? 0 },
     { id: 'assinado_pelo_nome', rotulo: 'Assinado pelo nome', qtd: data?.empresas.filter((e) => e.motivo === 'CONTRATO_ASSINADO_PELO_NOME').length ?? 0 },
@@ -278,6 +283,7 @@ export default function Contratos() {
                             {item.status === 'ASSINADO' && <SealCheck size={12} weight="fill" />} {STATUS_POR_ID[item.status].rotulo}
                           </span>
                           <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">{MOTIVO[item.motivo]}</p>
+                          <AvisoDistrato distrato={item.distrato} />
                         </td>
                         <td className="px-5 py-3 text-gray-700 dark:text-zinc-300 break-all">{item.contratoPrincipal?.nome ?? '—'}</td>
                         <td className="px-5 py-3">

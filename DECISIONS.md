@@ -121,3 +121,16 @@ outro campo mudar, trava todos os envios até alguém conferir; o envio em lote 
 um envio individual sem efeito colateral. Cada envio fica em `au_acessorias_envios` com a ficha de
 antes e de depois.
 
+---
+
+## ADR-010: Distrato tira a empresa das pendências da auditoria
+
+**Contexto (02/10/2026):** cliente que encerrou o contrato continuava cobrado nos módulos (aditivo
+do ano, contrato, honorário). O distrato fica numa subpasta própria ("DISTRATO…") que o robô não via.
+
+**Decisão:** a varredura inclui as subpastas de distrato (migration 009). Distrato da prestação de
+serviços contábeis põe a empresa em "Distrato" em Aditivos, Contratos e Honorários (fora das
+pendências e do percentual, sem envio de honorário). Contrato mais novo que o distrato = cliente
+voltou, distrato desconsiderado. Distrato de BPO e social são só aviso. Nada vai ao Acessórias por
+enquanto.
+

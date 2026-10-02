@@ -13,6 +13,7 @@ import { useToast } from '../../context/ToastContext';
 import { maskCNPJ } from '../../utils/validators';
 import { SyncBar } from '../../components/audit/SyncBar';
 import { Dialogo } from '../../components/Dialogo';
+import { AvisoDistrato, CLASSE_DISTRATO } from '../../components/audit/AvisoDistrato';
 import type {
   AlertaHonorario, ComparacaoAcessorias, HonorarioDocumento, HonorarioEmpresa, ResultadoEnvioAcessorias,
   SituacaoHonorario,
@@ -38,6 +39,7 @@ const SITUACOES: { id: SituacaoHonorario; rotulo: string; classe: string }[] = [
   { id: 'SEM_DOCUMENTO',      rotulo: 'Sem documento',      classe: 'bg-gray-100 text-gray-700 dark:bg-zinc-800 dark:text-zinc-300' },
   { id: 'LIDO',               rotulo: 'Lido',               classe: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' },
   { id: 'MANUAL',             rotulo: 'Informado',          classe: 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300' },
+  { id: 'DISTRATO',           rotulo: 'Distrato',           classe: CLASSE_DISTRATO },
 ];
 const SITUACAO = Object.fromEntries(SITUACOES.map((s) => [s.id, s])) as Record<SituacaoHonorario, (typeof SITUACOES)[number]>;
 
@@ -89,7 +91,8 @@ export function lerValorDigitado(texto: string): number | null {
 }
 
 const podeAtualizar = (e: HonorarioEmpresa) =>
-  e.valor !== null && (e.acessorias.comparacao === 'DIFERENTE' || e.acessorias.comparacao === 'NAO_CONFERIDO');
+  e.situacao !== 'DISTRATO' && e.valor !== null
+  && (e.acessorias.comparacao === 'DIFERENTE' || e.acessorias.comparacao === 'NAO_CONFERIDO');
 
 function passa(e: HonorarioEmpresa, situacao: string, comparacao: string, responsavel: string, busca: string) {
   if (situacao && e.situacao !== situacao) return false;
@@ -459,6 +462,7 @@ export default function Honorarios() {
                         </td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${sel.classe}`}>{sel.rotulo}</span>
+                          <AvisoDistrato distrato={e.distrato} />
                           {e.alertas.length > 0 && (
                             <ul className="mt-1 space-y-0.5 text-xs">
                               {e.alertas.map((a) => (
@@ -499,10 +503,12 @@ export default function Honorarios() {
                                 <CloudArrowUp size={14} aria-hidden /> Atualizar
                               </button>
                             )}
+                            {e.situacao !== 'DISTRATO' && (
                             <button type="button" className="btn-outline min-h-[40px] px-3 py-1.5 whitespace-nowrap" onClick={() => setInformar(e)}>
                               <PencilSimple size={14} aria-hidden />
                               {e.manual ? 'Alterar valor' : e.situacao === 'CONFERIR' ? 'Conferir valor' : 'Informar valor'}
                             </button>
+                            )}
                           </div>
                         </td>
                       </tr>

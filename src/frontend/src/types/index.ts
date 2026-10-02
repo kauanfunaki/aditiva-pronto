@@ -197,7 +197,26 @@ export type AuditAcaoVinculo =
 
 export type AuditStatusAditivo =
   | 'SEM_VINCULO' | 'SEM_PASTA_CONTRATO' | 'SEM_ADITIVO' | 'SO_DOCX'
-  | 'PDF_SEM_ASSINATURA' | 'ASSINADO_PELO_NOME' | 'ASSINADO_DIGITAL';
+  | 'PDF_SEM_ASSINATURA' | 'ASSINADO_PELO_NOME' | 'ASSINADO_DIGITAL' | 'DISTRATO';
+
+// ── Distrato (Aditivos, Contratos e Honorários) ───────────────────
+export interface AuditDocumentoDistrato {
+  nomePasta:       string;
+  caminhoRelativo: string;
+  nome:            string;
+  tipo:            'contabil' | 'bpo' | 'social';
+  assinado:        boolean;
+  assinatura:      string;
+  dataFim:         string | null;
+  dataDocumento:   string | null;
+}
+
+/** efetivo = tira das pendências · desconsiderado = contrato mais novo · avisos = BPO/social. */
+export interface AuditDistrato {
+  efetivo:        AuditDocumentoDistrato | null;
+  desconsiderado: { documento: AuditDocumentoDistrato; contratoMaisNovoEm: string } | null;
+  avisos:         AuditDocumentoDistrato[];
+}
 
 export type AuditAssinatura = 'digital' | 'pelo_nome' | 'declarada_sem' | 'nenhuma' | 'nao_se_aplica';
 
@@ -224,13 +243,14 @@ export interface AuditEmpresaAditivo {
   outrosAditivos:         AuditArquivoAditivo[];
   ultimoAnoComAditivo:    number | null;
   decimoTerceiro: {
-    situacao: Exclude<AuditStatusAditivo, 'SEM_VINCULO' | 'SEM_PASTA_CONTRATO' | 'SEM_ADITIVO'>;
+    situacao: Exclude<AuditStatusAditivo, 'SEM_VINCULO' | 'SEM_PASTA_CONTRATO' | 'SEM_ADITIVO' | 'DISTRATO'>;
     assinado: boolean;
     arquivos: AuditArquivoAditivo[];
   } | null;
   geradosNoApp:           number;
   ultimoGeradoNoApp:      string | null;
   alertas:                'gerado_no_app_sem_arquivo'[];
+  distrato:               AuditDistrato | null;
 }
 
 export interface AuditRelatorioAditivos {
@@ -245,6 +265,7 @@ export interface AuditRelatorioAditivos {
     geradoNoAppSemArquivo: number;
     marcadasSemPasta:      number;
     decimoTerceiro:        { empresas: number; assinados: number };
+    distratos:             number;
   };
   empresas: AuditEmpresaAditivo[];
 }
@@ -261,14 +282,14 @@ export interface AuditFiltrosAditivos {
 // ── Auditoria Contratos (Fase 2B) ───────────────────────────────────
 
 export type AuditStatusContrato =
-  | 'NAO_LOCALIZADO' | 'MINUTA' | 'AGUARDANDO_ASSINATURA' | 'REVISAR' | 'ASSINADO';
+  | 'NAO_LOCALIZADO' | 'MINUTA' | 'AGUARDANDO_ASSINATURA' | 'REVISAR' | 'ASSINADO' | 'DISTRATO';
 
 export type AuditMotivoContrato =
   | 'SEM_VINCULO' | 'SEM_PASTA_CONTRATO' | 'SEM_CONTRATO_SERVICO'
   | 'MULTIPLOS_CONTRATOS_ATUAIS' | 'SOMENTE_CONTRATO_ANTIGO'
   | 'CONTRATO_ASSINADO_PELO_NOME' | 'ARQUIVO_NAO_IDENTIFICADO' | 'PDF_NAO_ANALISADO'
   | 'FORMATO_EXIGE_REVISAO' | 'CONTRATO_DIGITAL_ASSINADO'
-  | 'PDF_SEM_ASSINATURA' | 'APENAS_MINUTA';
+  | 'PDF_SEM_ASSINATURA' | 'APENAS_MINUTA' | 'DISTRATO_PRESTACAO';
 
 export interface AuditArquivoContrato {
   nomePasta:       string;
@@ -312,6 +333,7 @@ export interface AuditEmpresaContrato {
   contratoPrincipal: AuditArquivoContrato | null;
   warnings:          string[];
   renomeacao:        AuditPlanoRenomeacao | null;
+  distrato:          AuditDistrato | null;
 }
 
 export interface AuditRelatorioContratos {
@@ -323,6 +345,7 @@ export interface AuditRelatorioContratos {
     revisar:   number;
     marcadasSemPasta: number;
     porStatus: Record<AuditStatusContrato, number>;
+    distratos: number;
   };
   empresas: AuditEmpresaContrato[];
 }
@@ -343,7 +366,7 @@ export interface UsuarioLogado {
 
 // ── Honorários (leitura dos documentos e Acessórias) ──────────────
 export type SituacaoHonorario =
-  | 'MANUAL' | 'LIDO' | 'CONFERIR' | 'AGUARDANDO_LEITURA' | 'DIGITALIZADO' | 'SEM_VALOR' | 'SEM_DOCUMENTO';
+  | 'MANUAL' | 'LIDO' | 'CONFERIR' | 'AGUARDANDO_LEITURA' | 'DIGITALIZADO' | 'SEM_VALOR' | 'SEM_DOCUMENTO' | 'DISTRATO';
 
 export type AlertaHonorario =
   | 'minuta' | 'sem_assinatura' | 'mencao' | 'acordo_comercial' | 'valor_condicional'
@@ -378,6 +401,7 @@ export interface HonorarioEmpresa {
   documentos: HonorarioDocumento[];
   acessorias: { comparacao: ComparacaoAcessorias; valor: number | null; identificador: string | null; situacao: string | null };
   ultimoEnvio: { enviadoEm: string; conta: string; valorEnviado: number; status: 'ok' | 'erro'; erro: string | null } | null;
+  distrato:    AuditDistrato | null;
 }
 
 export interface RelatorioHonorarios {

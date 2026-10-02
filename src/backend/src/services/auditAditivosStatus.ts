@@ -27,6 +27,8 @@ export const STATUS_ADITIVO = [
   'PDF_SEM_ASSINATURA',
   'ASSINADO_PELO_NOME',
   'ASSINADO_DIGITAL',
+  // Não sai de calcularStatusAditivo: o serviço aplica quando a empresa tem distrato (auditDistrato).
+  'DISTRATO',
 ] as const;
 
 export type StatusAditivo = (typeof STATUS_ADITIVO)[number];

@@ -12,10 +12,11 @@ export type SituacaoHonorario =
   | 'AGUARDANDO_LEITURA'  // o robô ainda não leu os documentos
   | 'DIGITALIZADO'        // só há documento sem texto (imagem): informar à mão
   | 'SEM_VALOR'           // documentos lidos, nenhum com valor
-  | 'SEM_DOCUMENTO';      // sem pasta vinculada ou sem documento na pasta
+  | 'SEM_DOCUMENTO'       // sem pasta vinculada ou sem documento na pasta
+  | 'DISTRATO';           // distrato da prestação de serviços: não envia ao Acessórias
 
 export const SITUACOES_HONORARIO: SituacaoHonorario[] = [
-  'CONFERIR', 'DIGITALIZADO', 'SEM_VALOR', 'AGUARDANDO_LEITURA', 'SEM_DOCUMENTO', 'LIDO', 'MANUAL',
+  'CONFERIR', 'DIGITALIZADO', 'SEM_VALOR', 'AGUARDANDO_LEITURA', 'SEM_DOCUMENTO', 'LIDO', 'MANUAL', 'DISTRATO',
 ];
 
 export type AlertaHonorario =

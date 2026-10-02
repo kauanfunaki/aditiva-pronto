@@ -120,3 +120,29 @@ export async function atualizarLeitura(chave: string, leitura: LeituraDoDocument
     [versao, ...colunasDaLeitura(leitura), chave],
   );
 }
+
+export interface LeituraPorChaveRow extends RowDataPacket {
+  chave:          string;
+  modificado_em:  Date;
+  tamanho:        number;
+  status:         'ok' | 'sem_texto' | 'erro';
+  data_documento: string | null;
+  tipo_documento: 'contrato' | 'aditivo' | 'outro' | null;
+  texto?:         string | null;
+}
+
+/** Leituras de algumas chaves; o texto só vem quando pedido (distrato precisa dele). */
+export async function listarPorChaves(chaves: string[], comTexto: boolean): Promise<LeituraPorChaveRow[]> {
+  const saida: LeituraPorChaveRow[] = [];
+  for (let i = 0; i < chaves.length; i += 500) {
+    const lote = chaves.slice(i, i + 500);
+    const [rows] = await getPool().query<LeituraPorChaveRow[]>(
+      `SELECT chave, modificado_em, tamanho, status, DATE_FORMAT(data_documento, '%Y-%m-%d') AS data_documento,
+              tipo_documento${comTexto ? ', texto' : ''}
+       FROM au_textos WHERE chave IN (?)`,
+      [lote],
+    );
+    saida.push(...rows);
+  }
+  return saida;
+}

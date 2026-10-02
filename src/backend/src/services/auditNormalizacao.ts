@@ -3,13 +3,14 @@
 // exatamente igual (ver docs/PLANO-AUDITORIA-CONTRATOS-ADITIVOS.md, seção 8).
 
 /**
- * Regex padrão da subpasta do contrato de serviço, aplicada sobre
- * `semAcentoMaiusculo(nomeDaSubpasta)`. Cobre as 26 grafias achadas na rede
- * (CONTRATO DE PRESTAÇÃO DE SERVIÇOS, CONTRATO P SERVIÇOS, CONTRATO DE
- * HONORÁRIOS…) e deixa de fora ALUGUEL, LOCAÇÃO, COWORKING, ALTERAÇÃO
- * CONTRATUAL e MODELO CONTRATO.
+ * Regex padrão das subpastas que o robô varre, aplicada sobre
+ * `semAcentoMaiusculo(nomeDaSubpasta)`. Cobre as 26 grafias do contrato de serviço
+ * achadas na rede (CONTRATO DE PRESTAÇÃO DE SERVIÇOS, CONTRATO P SERVIÇOS, CONTRATO DE
+ * HONORÁRIOS…) e deixa de fora ALUGUEL, LOCAÇÃO, COWORKING, ALTERAÇÃO CONTRATUAL e
+ * MODELO CONTRATO. Desde 02/10/2026 inclui também as subpastas de DISTRATO, que ficam
+ * ao lado da do contrato (regras em auditDistrato.ts; migration 009).
  */
-export const REGEX_SUBPASTA_CONTRATO_PADRAO = '^CONTRATOS? (DE )?(P |PREST|SERVI|HONOR)';
+export const REGEX_SUBPASTA_CONTRATO_PADRAO = '^(CONTRATOS? (DE )?(P |PREST|SERVI|HONOR)|DISTRATO)';
 
 /** Remove acentos, põe em maiúsculas e colapsa espaços. Mantém a pontuação. */
 export function semAcentoMaiusculo(nome: string): string {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  agruparPorNome, filialDaPasta, indexarEmpresas, indexarPastas, nomeBaseDaPasta, ordemDoCnpj,
-  sugerirEmpresas, sugerirPastas, vinculoAutomatico,
+  agruparPorNome, ehComecoDoNome, filialDaPasta, indexarEmpresas, indexarPastas, nomeBaseDaPasta,
+  nomeSemSigla, ordemDoCnpj, sugerirEmpresas, sugerirPastas, vinculoAutomatico,
 } from './auditVinculo';
 
 const empresas = indexarEmpresas([
@@ -136,5 +136,42 @@ describe('filial só desempata entre nomes praticamente iguais (caso real AJL ×
     const s = sugerirEmpresas('MH EXPRESS TRANSPORTES LTDA - 02 FILIAL SP', ajl);
     expect(s[0].id).toBe('mh-01');
     expect(s.find((e) => e.id === 'ajl-02')?.filialConfere ?? false).toBe(false);
+  });
+});
+
+describe('pasta com razão social cortada e sigla na frente (caso real SINCOPEÇAS, 02/10/2026)', () => {
+  const sindicato = indexarEmpresas([{
+    id: 'sincopecas',
+    razaoSocial: 'SINDICATO DO COMERCIO VAREJISTA, ATACADISTA E DISTRIBUIDOR DE PECAS E ACESSORIOS PARA VEICULOS E COMERCIO VAREJISTA DE VEICULOS NO ESTADO DO PAR',
+    cnpj: '76.682.236/0001-17',
+  }])[0];
+  const pasta = 'SINCOPEÇAS - SINDICATO DO COMERCIO VAREJISTA, ATACADISTA';
+
+  it('tira a sigla da frente', () => {
+    expect(nomeSemSigla(pasta)).toBe('SINDICATO DO COMERCIO VAREJISTA ATACADISTA');
+    expect(nomeSemSigla('BLD LOGÍSTICA LTDA - 12 FILIAL - CURITIBA-PR')).toBeNull();
+    expect(nomeSemSigla('AUTO SOCORRO BR - GUINCHOS')).toBeNull();
+    expect(nomeSemSigla('ALLMETAL LTDA')).toBeNull();
+  });
+
+  it('nome cortado é o começo do nome inteiro (a última palavra pode estar cortada)', () => {
+    expect(ehComecoDoNome('SINDICATO DO COMERCIO VAREJISTA ATACADISTA', sindicato.nomeNormalizado)).toBe(true);
+    expect(ehComecoDoNome('VEICULOS NO ESTADO DO PAR', 'VEICULOS NO ESTADO DO PARANA')).toBe(true);
+    // Curto demais para afirmar alguma coisa.
+    expect(ehComecoDoNome('TRANSPORTES SAO', 'TRANSPORTES SAO JOAO LTDA')).toBe(false);
+    expect(ehComecoDoNome('ALLMETAL COMERCIO', 'ALLMETAL COMERCIO DE FERRO')).toBe(false);
+  });
+
+  it('a empresa passa a sugerir a pasta, e a pasta passa a sugerir a empresa', () => {
+    const [s] = sugerirPastas(sindicato, indexarPastas([pasta, 'SINDICATO RURAL DE CURITIBA', 'FISCAL']));
+    expect(s).toMatchObject({ nomePasta: pasta, similaridade: 0.9 });
+    expect(sugerirEmpresas(pasta, [sindicato, ...empresas])[0].id).toBe('sincopecas');
+  });
+
+  it('nome igual continua vencendo o nome cortado', () => {
+    const [s] = sugerirPastas(empresas[5], indexarPastas([
+      'CIC TRANSPORTES RODOVIARIOS DE CARGAS LTDA', 'CIC TRANSPORTES RODOVIARIOS',
+    ]));
+    expect(s.nomePasta).toBe('CIC TRANSPORTES RODOVIARIOS DE CARGAS LTDA');
   });
 });

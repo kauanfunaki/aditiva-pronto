@@ -8,6 +8,7 @@ import { AppError } from '../middleware/errorHandler';
 import { logger } from '../utils/logger';
 import { deveCriarJobAgendado } from './auditAgendamento';
 import { normalizarNomePasta } from './auditNormalizacao';
+import { ehSubpastaDistrato } from './auditDistrato';
 import {
   MAX_ARQUIVOS_POR_LOTE, MAX_PASTAS_POR_LOTE,
   type Lote, type MarcaSemPasta, type VincularPasta,
@@ -362,7 +363,7 @@ export async function listarPastas(): Promise<ListaDePastas> {
     job: paraJobDTO(ultimo),
     resumo: {
       pastas:                   resultado.length,
-      comSubpastaContrato:      resultado.filter((p) => p.subpastasContrato.length > 0).length,
+      comSubpastaContrato:      resultado.filter((p) => p.subpastasContrato.some((n) => !ehSubpastaDistrato(n))).length,
       automaticas:              resultado.filter((p) => p.vinculo?.tipo === 'auto').length,
       confirmadas:              resultado.filter((p) => p.vinculo?.tipo === 'confirmado').length,
       ignoradas:                resultado.filter((p) => p.vinculo?.tipo === 'ignorado').length,
