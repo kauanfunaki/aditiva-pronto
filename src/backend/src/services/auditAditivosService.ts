@@ -9,7 +9,7 @@ import { paraJobDTO, type JobDTO } from './auditSyncService';
 import { classificarAditivo, type ArquivoParaClassificar } from './auditAditivosClassificador';
 import {
   calcularStatusAditivo, STATUS_ADITIVO,
-  type ArquivoClassificado, type PastaDaEmpresa, type StatusAditivo,
+  type ArquivoClassificado, type PastaDaEmpresa, type SituacaoDocumento, type StatusAditivo,
 } from './auditAditivosStatus';
 
 const FUSO = 'America/Sao_Paulo';
@@ -48,7 +48,8 @@ export interface EmpresaAditivo {
   aditivosDoAno:          ArquivoResumo[];
   outrosAditivos:         ArquivoResumo[];
   ultimoAnoComAditivo:    number | null;
-  temDecimoTerceiroDoAno: boolean;
+  /** Termo de 13º do ano, quando existe na pasta. null = não tem, o que não é pendência. */
+  decimoTerceiro:         { situacao: SituacaoDocumento; assinado: boolean; arquivos: ArquivoResumo[] } | null;
   geradosNoApp:           number;
   ultimoGeradoNoApp:      Date | null;
   alertas:                AlertaAditivo[];
@@ -66,6 +67,8 @@ export interface RelatorioAditivos {
     geradoNoAppSemArquivo: number;
     /** Marcadas como "sem pasta na rede de propósito": ficam fora do relatório. */
     marcadasSemPasta:      number;
+    /** Empresas com termo de 13º no ano, e quantas delas com o 13º assinado. */
+    decimoTerceiro:        { empresas: number; assinados: number };
   };
   empresas: EmpresaAditivo[];
 }
@@ -101,7 +104,10 @@ export async function montarRelatorioAditivos(anoReferencia: number): Promise<Re
   const [ultimo, config] = await Promise.all([base.buscarUltimoConcluido(), base.obterConfig()]);
   const vazio: RelatorioAditivos = {
     job: null, anoReferencia, anosDisponiveis: [anoReferencia], raizUnc: config.raizUnc,
-    resumo: { empresas: 0, emDia: 0, porStatus: porStatusZerado(), geradoNoAppSemArquivo: 0, marcadasSemPasta: 0 },
+    resumo: {
+      empresas: 0, emDia: 0, porStatus: porStatusZerado(), geradoNoAppSemArquivo: 0, marcadasSemPasta: 0,
+      decimoTerceiro: { empresas: 0, assinados: 0 },
+    },
     empresas: [],
   };
   if (!ultimo) return vazio;
@@ -168,7 +174,9 @@ export async function montarRelatorioAditivos(anoReferencia: number): Promise<Re
       aditivosDoAno:          r.aditivosDoAno.map(resumirArquivo),
       outrosAditivos:         r.outrosAditivos.map(resumirArquivo),
       ultimoAnoComAditivo:    r.ultimoAnoComAditivo,
-      temDecimoTerceiroDoAno: r.temDecimoTerceiroDoAno,
+      decimoTerceiro:         r.decimoTerceiro
+        ? { situacao: r.decimoTerceiro.situacao, assinado: r.decimoTerceiro.assinado, arquivos: r.decimoTerceiro.arquivos.map(resumirArquivo) }
+        : null,
       geradosNoApp:           g?.qtd ?? 0,
       ultimoGeradoNoApp:      g?.ultimo ?? null,
       alertas,
@@ -201,6 +209,10 @@ export async function montarRelatorioAditivos(anoReferencia: number): Promise<Re
       porStatus,
       geradoNoAppSemArquivo: linhas.filter((l) => l.alertas.includes('gerado_no_app_sem_arquivo')).length,
       marcadasSemPasta:      todasAtivas.length - empresas.length,
+      decimoTerceiro: {
+        empresas:  linhas.filter((l) => l.decimoTerceiro).length,
+        assinados: linhas.filter((l) => l.decimoTerceiro?.assinado).length,
+      },
     },
     empresas: linhas,
   };
@@ -215,6 +227,8 @@ export interface FiltrosAditivos {
   busca?:       string;
   /** Só empresas com algum alerta (ex.: gerado no app, mas não está na pasta). */
   soAlerta?:    boolean;
+  /** 'com' = só quem tem 13º no ano · 'pendente' = tem 13º, mas ainda sem assinatura. */
+  decimo?:      'com' | 'pendente';
 }
 
 const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -224,6 +238,8 @@ export function filtrarEmpresas(empresas: EmpresaAditivo[], f: FiltrosAditivos):
   const digitos = f.busca?.replace(/\D/g, '') ?? '';
   return empresas.filter((e) => {
     if (f.soAlerta && !e.alertas.length) return false;
+    if (f.decimo === 'com' && !e.decimoTerceiro) return false;
+    if (f.decimo === 'pendente' && (!e.decimoTerceiro || e.decimoTerceiro.assinado)) return false;
     if (f.status === 'em_dia' && !e.emDia) return false;
     if (f.status === 'pendente' && e.emDia) return false;
     if (f.status && f.status !== 'em_dia' && f.status !== 'pendente' && e.status !== f.status) return false;
@@ -253,7 +269,7 @@ export function gerarXlsxAditivos(rel: RelatorioAditivos, empresas: EmpresaAditi
   const cabecalho = [
     'Empresa', 'CNPJ', 'Responsável', 'Status', 'Em dia',
     'Pasta(s) na rede', `Aditivos de ${rel.anoReferencia}`, 'Arquivos',
-    'Último ano com aditivo', `Só 13º em ${rel.anoReferencia}`,
+    'Último ano com aditivo', `13º de ${rel.anoReferencia}`,
     `Gerados no app em ${rel.anoReferencia}`, 'Alerta',
   ];
   const linhas = empresas.map((e) => [
@@ -266,7 +282,7 @@ export function gerarXlsxAditivos(rel: RelatorioAditivos, empresas: EmpresaAditi
     e.aditivosDoAno.length,
     e.aditivosDoAno.map((a) => `${a.nome} (${ROTULO_ASSINATURA[a.assinatura] ?? a.assinatura})`).join('; '),
     e.ultimoAnoComAditivo ?? '',
-    e.temDecimoTerceiroDoAno && !e.emDia ? 'Sim' : '',
+    e.decimoTerceiro ? ROTULO_STATUS[e.decimoTerceiro.situacao] : '',
     e.geradosNoApp,
     e.alertas.includes('gerado_no_app_sem_arquivo') ? 'Gerado no app, mas não está na pasta' : '',
   ]);

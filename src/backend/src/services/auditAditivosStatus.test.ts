@@ -72,23 +72,44 @@ describe('calcularStatusAditivo', () => {
     expect(r.status).toBe('ASSINADO_DIGITAL');
   });
 
-  it('decisão 5: 13º sozinho não fecha a pendência', () => {
+  it('decisão 5: 13º sozinho não fecha a pendência do anual', () => {
     const r = status([pasta(arq('X - Termo Aditivo 13º.pdf', { pdfAssinado: true }))]);
-    expect(r).toMatchObject({ status: 'SEM_ADITIVO', emDia: false, temDecimoTerceiroDoAno: true });
+    expect(r).toMatchObject({ status: 'SEM_ADITIVO', emDia: false });
+    expect(r.decimoTerceiro).toMatchObject({ situacao: 'ASSINADO_DIGITAL', assinado: true });
   });
 
-  it('decisão 5: "13º e Honorário" fecha', () => {
+  it('decisão 5: "13º e Honorário" fecha o anual e também conta como o 13º', () => {
     const r = status([pasta(arq('AJAF TRANSPORTES -Termo Aditivo 13º e Honorario.pdf', { pdfAssinado: true }))]);
-    expect(r).toMatchObject({ status: 'ASSINADO_DIGITAL', emDia: true, temDecimoTerceiroDoAno: false });
+    expect(r).toMatchObject({ status: 'ASSINADO_DIGITAL', emDia: true });
+    expect(r.decimoTerceiro?.situacao).toBe('ASSINADO_DIGITAL');
   });
 
-  it('13º não atrapalha quando há o aditivo anual', () => {
+  it('13º não atrapalha o anual e tem situação própria', () => {
     const r = status([pasta(
       arq('X - Termo Aditivo 13º.pdf'),
       arq('X - Termo Aditivo Assinado.pdf', { pdfAssinado: true }),
     )]);
-    expect(r).toMatchObject({ status: 'ASSINADO_DIGITAL', temDecimoTerceiroDoAno: true });
-    expect(r.outrosAditivos.map((a) => a.nome)).toEqual(['X - Termo Aditivo 13º.pdf']);
+    expect(r).toMatchObject({ status: 'ASSINADO_DIGITAL', emDia: true });
+    expect(r.decimoTerceiro).toMatchObject({ situacao: 'PDF_SEM_ASSINATURA', assinado: false });
+    expect(r.decimoTerceiro?.arquivos.map((a) => a.nome)).toEqual(['X - Termo Aditivo 13º.pdf']);
+    expect(r.outrosAditivos).toEqual([]);
+  });
+
+  it('decisão 5: sem 13º na pasta não é pendência (decimoTerceiro = null)', () => {
+    const r = status([pasta(arq('X - Termo Aditivo Assinado.pdf', { pdfAssinado: true }))]);
+    expect(r).toMatchObject({ emDia: true, decimoTerceiro: null });
+  });
+
+  it('13º: situação pelo melhor arquivo, como no anual', () => {
+    expect(status([pasta(arq('X - Termo Aditivo 13º.docx'))]).decimoTerceiro?.situacao).toBe('SO_DOCX');
+    expect(status([pasta(arq('X - Termo Aditivo 13º.docx'), arq('X - Termo Aditivo 13º Ass.pdf'))]).decimoTerceiro)
+      .toMatchObject({ situacao: 'ASSINADO_PELO_NOME', assinado: true });
+  });
+
+  it('13º de outro ano vai para "outros aditivos", não para o 13º do ano', () => {
+    const r = status([pasta(arq('X - Termo Aditivo 13º.pdf', { modificadoEm: EM_2025 }))]);
+    expect(r.decimoTerceiro).toBeNull();
+    expect(r.outrosAditivos).toHaveLength(1);
   });
 
   it('modelo não conta', () => {

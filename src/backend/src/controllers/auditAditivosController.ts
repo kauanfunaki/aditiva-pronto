@@ -15,6 +15,7 @@ const filtrosSchema = z.object({
   responsavel: z.string().trim().max(100).optional(),
   busca:       z.string().trim().max(200).optional(),
   alerta:      z.enum(['1']).optional(),
+  decimo:      z.enum(['com', 'pendente']).optional(),
 });
 
 function lerFiltros(query: unknown) {
@@ -41,6 +42,7 @@ export async function exportRelatorioAditivos(req: Request, res: Response, next:
       responsavel: f.responsavel || undefined,
       busca:       f.busca || undefined,
       soAlerta:    f.alerta === '1',
+      decimo:      f.decimo,
     });
     const buffer   = gerarXlsxAditivos(rel, empresas);
     const fileName = `auditoria_aditivos_${f.ano}.xlsx`;
