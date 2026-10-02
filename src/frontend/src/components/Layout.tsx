@@ -1,10 +1,21 @@
 import { Outlet, NavLink } from 'react-router-dom';
-import { House, Buildings, ChartBar, GearSix, FolderSimpleUser, FileText } from '@phosphor-icons/react';
+import { useMutation } from '@tanstack/react-query';
+import {
+  House, Buildings, ChartBar, GearSix, FolderSimpleUser, FileText, SignOut, UserCircle, CurrencyCircleDollar,
+} from '@phosphor-icons/react';
 import { useTheme } from '../hooks/useTheme';
+import { useSessao } from '../hooks/useSessao';
+import { sair } from '../services/api';
+import { definirSessao } from '../services/queryClient';
 import { ThemeToggle } from './ThemeToggle';
 
 export default function Layout() {
   const { theme, toggle } = useTheme();
+  const { usuario } = useSessao();
+  const saida = useMutation({
+    mutationFn: sair,
+    onSettled: () => definirSessao(null),
+  });
 
   const navClass = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
@@ -50,7 +61,23 @@ export default function Layout() {
 
         <div className="flex-1" />
 
+        {usuario && (
+          <span className="hidden sm:flex items-center gap-1.5 text-sm text-gray-700 dark:text-zinc-300">
+            <UserCircle size={18} weight="duotone" aria-hidden />
+            {usuario.nome}
+          </span>
+        )}
         <ThemeToggle theme={theme} onToggle={toggle} />
+        <button
+          type="button"
+          onClick={() => saida.mutate()}
+          disabled={saida.isPending}
+          className="btn-ghost px-3 min-h-[40px]"
+          title="Sair desta conta neste computador"
+        >
+          <SignOut size={18} aria-hidden />
+          Sair
+        </button>
       </header>
 
       {/* ── Body (sidebar + main) ──────────────────────────────────── */}
@@ -76,7 +103,7 @@ export default function Layout() {
               Configurações
             </NavLink>
 
-            {/* Auditoria — Contratos e Aditivos entram aqui nas Fases 2A/2B */}
+            {/* Auditoria: contratos, aditivos, honorários e o vínculo das pastas */}
             <p className="mt-4 mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-zinc-500">
               Auditoria
             </p>
@@ -87,6 +114,10 @@ export default function Layout() {
             <NavLink to="/auditoria/aditivos" className={navClass}>
               <FileText size={17} weight="duotone" />
               Aditivos
+            </NavLink>
+            <NavLink to="/auditoria/honorarios" className={navClass}>
+              <CurrencyCircleDollar size={17} weight="duotone" />
+              Honorários
             </NavLink>
             <NavLink to="/auditoria/pastas" className={navClass}>
               <FolderSimpleUser size={17} weight="duotone" />

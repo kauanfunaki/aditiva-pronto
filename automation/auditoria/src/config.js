@@ -5,6 +5,9 @@ const path = require('node:path');
 const { carregarEnv } = require('./env');
 const pacote = require('../package.json');
 
+/** Pasta dos clientes (J:). Trocar só pelo .env (AUDIT_RAIZ_PERMITIDA). */
+const RAIZ_PERMITIDA_PADRAO = String.raw`\\192.168.140.249\Contabilidade`;
+
 function inteiroPositivo(nome, padrao) {
   const texto = process.env[nome];
   if (texto === undefined || texto.trim() === '') return padrao;
@@ -49,6 +52,9 @@ function carregarConfig() {
     requestTimeoutMs: inteiroPositivo('AUDIT_REQUEST_TIMEOUT_MS', 30_000),
     retryAttempts: inteiroPositivo('AUDIT_RETRY_ATTEMPTS', 3),
     logLevel: (process.env.AUDIT_LOG_LEVEL || 'info').toLowerCase(),
+    // Única raiz de onde o robô lê CONTEÚDO de documento (texto para o honorário).
+    // Fica no robô, não no servidor: uma configuração alterada no app não amplia o acesso.
+    raizPermitida: (process.env.AUDIT_RAIZ_PERMITIDA || RAIZ_PERMITIDA_PADRAO).trim(),
     executarUmaVez: process.argv.includes('--once'),
   };
 }

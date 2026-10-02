@@ -58,6 +58,8 @@
 
 ## ADR-006: Sem autenticação no MVP
 
+> **Substituída pela ADR-008 em 02/10/2026.**
+
 **Contexto:** A aplicação é interna para uso da equipe da 41 Contábil.
 
 **Decisão:** Sem sistema de autenticação no MVP. O acesso é controlado por rede (VPN ou IP allowlist no nginx).
@@ -77,3 +79,45 @@
 **Motivo:** Permite rodar `npm install` uma vez, hoist de dependências comuns, e scripts `--workspace=` para build seletivo.
 
 **Trade-off:** A pasta `shared/` com tipos compartilhados requer alias `@shared/*` tanto no `tsconfig.json` do backend quanto no `vite.config.ts`.
+
+---
+
+## ADR-008: Login com contas compartilhadas por setor
+
+**Contexto (02/10/2026):** a API respondia sem credencial nenhuma (`/api/companies` devolvia até o
+complemento com CPF do sócio). Os honorários e o envio ao Acessórias não podiam ir ao ar assim.
+
+**Decisão:** login com usuário e senha, **uma conta por setor** (Societário e Controladoria), sem
+perfis, e a mesma conta aberta em vários computadores ao mesmo tempo. As contas são criadas e têm a
+senha trocada só pelo script `npm --prefix src/backend run conta`, que gera a senha (~93 bits) e a
+mostra uma vez; não há cadastro nem troca de senha pela tela.
+
+**Como:** senha com scrypt (`services/senha.ts`); sessão em cookie `__Host-ap_sessao` (HttpOnly,
+Secure, SameSite=Strict, 12 h), com só o SHA-256 do token no banco (`ap_sessoes`, migration 007);
+pedido que muda dado só vale vindo do próprio site (`Sec-Fetch-Site`/`Origin`); limite de
+tentativas por IP + conta. O robô continua só com o `AUDIT_ROBOT_TOKEN` (rotas `/api/audit/robot/*`
+ficam antes do login).
+
+**Trade-off:** com conta compartilhada, o registro diz qual SETOR fez cada coisa (ex.: quem atualizou
+um honorário no Acessórias), não qual pessoa.
+
+---
+
+## ADR-009: Honorário do documento mais recente, enviado ao Acessórias pela API
+
+**Contexto (02/10/2026):** muitas empresas com o honorário desatualizado no Acessórias. O modelo de
+importação de empresas do Acessórias não tem campo de honorário; a API tem (`honorario` em
+`POST /companies`, devolvido em `GET /companies/{cnpj}`).
+
+**Decisão:** vale o valor do **documento mais recente** entre contrato e termo aditivo de honorário,
+sem correção pelo IPCA. O robô extrai o texto dos PDF/DOCX das subpastas de contrato; o app lê o
+valor (`services/honorarioLeitor.ts`) e escolhe o documento (`services/honorariosRegras.ts`). Contrato
+digitalizado não tem texto: a pessoa informa o valor na tela. O envio ao Acessórias é por botão,
+uma empresa ou várias.
+
+**Cuidados com a API do Acessórias** (a documentação não diz se campo omitido é apagado):
+só envia para empresa que já existe lá (o POST também cria); lê a ficha antes e depois e, se algum
+outro campo mudar, trava todos os envios até alguém conferir; o envio em lote só libera depois de
+um envio individual sem efeito colateral. Cada envio fica em `au_acessorias_envios` com a ficha de
+antes e de depois.
+

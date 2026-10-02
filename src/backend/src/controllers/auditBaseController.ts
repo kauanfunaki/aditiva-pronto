@@ -3,9 +3,10 @@ import { z } from 'zod';
 import { AppError } from '../middleware/errorHandler';
 import {
   concluirSchema, falharSchema, loteSchema, marcaSemPastaSchema, proximoJobSchema,
-  resumirErroZod, vincularPastaSchema,
+  resumirErroZod, textosSchema, vincularPastaSchema,
 } from '../services/auditPayload';
 import * as audit from '../services/auditSyncService';
+import * as textos from '../services/auditTextosService';
 
 function validar<T extends z.ZodTypeAny>(schema: T, dados: unknown): z.infer<T> {
   const r = schema.safeParse(dados);
@@ -92,6 +93,27 @@ export async function postFinish(req: Request, res: Response, next: NextFunction
     const jobId = jobIdDe(req);
     const { totais } = validar(concluirSchema, req.body);
     res.json(await audit.concluir(jobId, totais));
+  } catch (err) { next(err); }
+}
+
+// POST /api/audit/robot/texts/pending — documentos que ainda não têm texto lido.
+export async function postTextosPendentes(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { host, versao } = validar(proximoJobSchema, req.body);
+    const pedido = await textos.textosPendentes(host, versao ?? null);
+    if (!pedido) {
+      res.status(204).end();
+      return;
+    }
+    res.json(pedido);
+  } catch (err) { next(err); }
+}
+
+// POST /api/audit/robot/texts — texto extraído pelo robô.
+export async function postTextos(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { textos: itens } = validar(textosSchema, req.body);
+    res.json(await textos.receberTextos(itens, null));
   } catch (err) { next(err); }
 }
 

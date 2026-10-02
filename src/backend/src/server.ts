@@ -12,6 +12,10 @@ const app  = express();
 const PORT = parseInt(process.env.PORT || '3001');
 const PROD = process.env.NODE_ENV === 'production';
 
+// Atrás do proxy do EasyPanel (um salto): req.ip passa a ser o IP de quem acessou,
+// e é por ele que o login limita tentativas.
+app.set('trust proxy', parseInt(process.env.TRUST_PROXY ?? (PROD ? '1' : '0'), 10));
+
 // ── Segurança & parsing ───────────────────────────────────────────
 app.use(helmet({
   contentSecurityPolicy: {

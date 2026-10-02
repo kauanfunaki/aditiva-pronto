@@ -1,15 +1,18 @@
 # Robô de auditoria
 
-Coletor compartilhado pelos módulos de Contratos e Aditivos. Ele consulta a fila do
-Aditiva Pronto, lê a pasta de rede configurada pelo servidor e envia apenas metadados.
+Coletor compartilhado pelos módulos de Contratos, Aditivos e Honorários. Ele consulta a fila
+do Aditiva Pronto, lê a pasta de rede configurada pelo servidor e envia metadados dos arquivos
+e, para o honorário, o texto dos PDF/DOCX das subpastas de contrato.
 
 O robô é estritamente somente leitura: não cria, move, renomeia nem apaga arquivos.
 
 ## Configuração
 
-1. Instale Node.js 18 ou superior na máquina que alcança a rede interna.
-2. Copie `.env.example` para `.env`.
-3. Preencha `AUDIT_API_BASE_URL` e um token novo em `AUDIT_ROBOT_TOKEN`.
+1. Instale Node.js 22 ou superior na máquina que alcança a rede interna.
+2. Rode `npm ci` nesta pasta (uma dependência: `unpdf`, o pdf.js empacotado, sem código nativo).
+   No PC do robô não é preciso: o pacote de instalação já leva o `node_modules`.
+3. Copie `.env.example` para `.env` e preencha `AUDIT_API_BASE_URL` e `AUDIT_ROBOT_TOKEN` com o
+   **mesmo** token configurado no servidor (EasyPanel). Token diferente = HTTP 401.
 4. Garanta que a conta do Windows tenha acesso de leitura ao caminho UNC. Não use unidade
    mapeada (`J:`), pois serviços do Windows normalmente não a enxergam.
 5. Execute `npm test` e depois `npm start` nesta pasta.
@@ -21,14 +24,23 @@ por inteiro; por isso, esse comando não é um dry run.
 
 - nome da pasta e das subpastas de contrato reconhecidas pela configuração do app;
 - caminho relativo, nome, extensão, tamanho e data de modificação dos arquivos;
-- para PDFs, presença de assinatura digital (`/ByteRange`) e marca ICP-Brasil.
+- para PDFs, presença de assinatura digital (`/ByteRange`) e marca ICP-Brasil;
+- **texto dos PDF e DOCX** das subpastas de contrato das pastas vinculadas a uma empresa, para o
+  app ler o honorário. O app diz quais arquivos ler (`/api/audit/robot/texts/pending`) e o robô
+  devolve o texto (`/api/audit/robot/texts`), em lotes de 40 a cada consulta à fila. Só arquivo
+  novo ou alterado é lido de novo.
+
+**Onde o robô lê conteúdo:** só dentro de `AUDIT_RAIZ_PERMITIDA` (padrão
+`\\192.168.140.249\Contabilidade`), na subpasta de contrato da pasta do cliente, e só `.pdf` e
+`.docx`. Essa raiz fica no `.env` do robô, não no servidor: mesmo que a configuração do app seja
+alterada, o robô não lê fora da pasta de clientes. PDF digitalizado (imagem) volta como "sem texto".
 
 Arquivos temporários do Office, AppleDouble, `Thumbs.db`, `.DS_Store` e `desktop.ini`
 são ignorados. PDFs acima de 30 MB não são carregados na memória e ficam sinalizados
 como não analisados para revisão no app.
 
-O conteúdo dos documentos não é enviado. Nome indicando `ASSINADO` sem assinatura digital
-será tratado pelo módulo de Contratos como revisão manual de possível assinatura física.
+Nome indicando `ASSINADO` sem assinatura digital é tratado pelo módulo de Contratos como
+revisão manual de possível assinatura física.
 
 ## Operação
 

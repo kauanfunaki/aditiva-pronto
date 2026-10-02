@@ -6,6 +6,10 @@
 > aditivapronto.41tech.cloud. A migration 003 foi aplicada e o `AUDIT_ROBOT_TOKEN` está
 > configurado. Falta o robô coletor (seção 8.4). A seção 8 traz o contrato **como foi
 > implementado**. As seções 10 e 11 listam o que ainda precisamos decidir juntos.
+>
+> **Atualização de 02/10/2026:** robô instalado no PREMIER080 e primeira sincronização real
+> feita (513 pastas, 1.565 arquivos). Entraram o **login** e os **honorários** (seção 12):
+> leia a 12.1 antes de criar rota nova.
 
 ---
 
@@ -342,7 +346,8 @@ e vale para os dois módulos.
 - `au_empresas_sem_pasta` (`004`): `company_id`, `motivo`, `marcado_em`. É a empresa ativa
   que não tem pasta na rede de propósito. Fica fora da auditoria nos dois módulos.
 - A Fase 2A não precisou de tabela, então a `004` ficou com a base. `005` continua
-  reservada para Contratos, e `006` para a conferência manual (Fase 3).
+  reservada para Contratos, e `006` para a conferência manual (Fase 3). `007` é o login e
+  `008` os honorários (seção 12).
 
 ### 8.2 Endpoints
 
@@ -474,8 +479,8 @@ sem pasta.
 - **Branches:** `feat/auditoria-base`, `feat/auditoria-aditivos`, `feat/auditoria-contratos`.
   PR para a `main` sempre revisado pelo outro.
 - **Migrations com número reservado:** `003` e `004` são da Base, `005` dos Contratos
-  (Angelo) e `006` da conferência manual (Fase 3). Isso evita dois números iguais criados
-  no mesmo dia.
+  (Angelo), `006` da conferência manual (Fase 3), `007` do login e `008` dos honorários.
+  A próxima livre é a `009`. Isso evita dois números iguais criados no mesmo dia.
 - **Banco compartilhado com o Radar Societário:** nada de `DROP`/`ALTER` fora das tabelas
   `au_*`. Migration sempre idempotente, como as atuais.
 - **A rede é somente leitura.** O robô nunca cria, move, renomeia ou apaga nada em
@@ -511,3 +516,64 @@ sem pasta.
 3. Quais status de contrato fazem sentido para você? A tabela da seção 7 é só um ponto de partida.
 4. Alguma coisa nesta divisão te atrapalha ou te deixa esperando por mim? A ideia é cada
    um destravar o outro o mais cedo possível. O JSON da seção 8.3 existe para isso.
+
+---
+
+## 12. Login e Honorários (02/10/2026)
+
+> Kauan. Decisões em `DECISIONS.md` (ADR-008 e ADR-009). Migrations `007` e `008`.
+
+### 12.1 Login (migration 007) — o que muda para quem cria rota
+
+- Duas contas compartilhadas, **Societário** e **Controladoria**, sem perfis. A mesma conta
+  pode estar aberta em vários PCs. Contas e senhas só pelo script
+  `npm --prefix src/backend run conta -- --login <conta> --nome "<Nome>"` (ou `--nova-senha`).
+- **Todas** as rotas `/api/*` exigem login, menos `/api/health`, `/api/auth/login`,
+  `/api/auth/logout` e `/api/audit/robot/*` (estas continuam só com o token do robô).
+- **Rota nova de tela:** é só registrar em `routes/index.ts` abaixo do `router.use(exigirUsuario)`
+  (ou num router montado ali); `req.usuario.login` diz qual conta fez o pedido.
+- **Rota nova do robô:** em `auditRobotRoutes` (`routes/audit.ts`), que fica antes do login.
+- No frontend, 401 em qualquer chamada volta para a tela de login sozinho (`services/api.ts`).
+
+### 12.2 Robô 1.1 — texto dos documentos
+
+| Endpoint | Corpo | Resposta |
+|---|---|---|
+| `POST /api/audit/robot/texts/pending` | `{ host, versao }` | `204` (nada a ler) ou `{ raizUnc, regexSubpastaContrato, restantes, arquivos: [{ chave, nomePasta, caminhoRelativo, modificadoEm, tamanho }] }` (até 40) |
+| `POST /api/audit/robot/texts` | `{ textos: [{ chave, modificadoEm, tamanho, status: 'ok' \| 'sem_texto' \| 'erro', paginas?, texto?, erro? }] }` (até 200; texto até 200 mil caracteres) | `{ gravados, ignorados }` |
+
+- **Chave** = SHA-256 de `nomePasta + "\n" + caminhoRelativo`. Entram só PDF e DOCX de pastas
+  vinculadas a uma empresa, da última sincronização. Arquivo novo ou alterado volta à lista;
+  o app ignora chave fora do inventário atual.
+- **Robô:** `src/textos.js` (DOCX com leitor de zip próprio; PDF com `unpdf` 1.8.1, o pdf.js
+  empacotado) e `src/textRunner.js` (um lote por consulta à fila). Só lê dentro de
+  `AUDIT_RAIZ_PERMITIDA`, na subpasta de contrato, `.pdf`/`.docx`. Node 22+. O
+  `instalar.ps1` agora está no repositório.
+- **`au_textos`** guarda o texto e a leitura do honorário. Se o módulo de Contratos precisar do
+  conteúdo de um documento (ex.: ler a data de assinatura), ele já está ali.
+
+### 12.3 Honorário
+
+- **Leitor** (`services/honorarioLeitor.ts`): valor da cláusula ("honorários mensais no valor de
+  R$ X") e do aditivo de honorário ("passa a ser de R$ X"), adicional por funcionário, data por
+  extenso, tipo do documento, conserto de PDF com acento trocado (fonte MacRoman). Mudou regra:
+  sobe `LEITOR_VERSAO` e o app relê os textos guardados, sem ir à rede.
+- **Escolha** (`services/honorariosRegras.ts`): documento mais recente com valor. Situações:
+  `LIDO`, `CONFERIR`, `DIGITALIZADO`, `SEM_VALOR`, `AGUARDANDO_LEITURA`, `SEM_DOCUMENTO`,
+  `MANUAL` (valor informado ou confirmado por uma pessoa, que vence a leitura).
+- **Calibração com os documentos reais (02/10):** 1.223 PDF/DOCX nas pastas vinculadas, 1.114
+  com texto e 109 digitalizados. Valor em 256 de 395 empresas: 168 sem pendência e 88 para
+  conferir (contrato mais novo digitalizado, acordo comercial, minuta, valor condicional ou
+  valores diferentes na mesma data).
+- **Tela** `/auditoria/honorarios`: conferir no Acessórias, atualizar uma empresa ou várias,
+  informar ou confirmar valor, histórico de envios.
+
+### 12.4 Acessórias
+
+- API: `GET /companies/ListAll/?Pagina=n` (20 por página), `GET /companies/{cnpj}/?registrationData&…`
+  e `POST /companies` (form-data, cria **ou** atualiza pelo `cnpj`). Token
+  `ACESSORIAS_API_TOKEN` só no servidor. Limite de 100 por minuto: fila de 1 chamada a cada 700 ms.
+- Proteções (ADR-009): só empresa que já existe lá; ficha lida antes e depois; outro campo mudou =
+  envios travados até alguém conferir; lote só depois de um envio individual limpo; cada envio
+  registrado com a conta, o IP e a ficha de antes e de depois (`au_acessorias_envios`).
+

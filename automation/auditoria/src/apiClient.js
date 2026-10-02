@@ -95,6 +95,11 @@ function criarApiClient(config, logger) {
     enviarLote: (jobId, lote) => requisitar(`/audit/robot/jobs/${encodeURIComponent(jobId)}/folders`, lote),
     concluir: (jobId, totais) => requisitar(`/audit/robot/jobs/${encodeURIComponent(jobId)}/finish`, { totais }),
     falhar: (jobId, erro) => requisitar(`/audit/robot/jobs/${encodeURIComponent(jobId)}/fail`, { erro }, { tentativas: 1 }),
+    textosPendentes: () => requisitar('/audit/robot/texts/pending', {
+      host: config.host,
+      versao: config.versao,
+    }, { permitir204: true }),
+    enviarTextos: (textos) => requisitar('/audit/robot/texts', { textos }),
   };
 }
 

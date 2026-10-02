@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { robotAuth } from '../middleware/robotAuth';
 import {
   getStatus, postSync, getFolders, putFolderLink, putEmpresaSemPasta,
-  postNextJob, postLote, postFinish, postFail,
+  postNextJob, postLote, postFinish, postFail, postTextosPendentes, postTextos,
 } from '../controllers/auditBaseController';
 
 // Auditoria de Contratos e Aditivos — base comum (Fase 1).
@@ -10,17 +10,23 @@ import {
 
 const router = Router();
 
-// ── Tela ──────────────────────────────────────────────────────────
+// ── Tela (exige login: montada depois do exigirUsuario) ───────────
 router.get('/status',        getStatus);
 router.post('/sync',         postSync);
 router.get('/folders',       getFolders);
 router.put('/folders/link',  putFolderLink);
 router.put('/companies/sem-pasta', putEmpresaSemPasta);
 
-// ── Robô coletor (Authorization: Bearer <AUDIT_ROBOT_TOKEN>) ──────
-router.post('/robot/next-job',          robotAuth, postNextJob);
-router.post('/robot/jobs/:id/folders',  robotAuth, postLote);
-router.post('/robot/jobs/:id/finish',   robotAuth, postFinish);
-router.post('/robot/jobs/:id/fail',     robotAuth, postFail);
-
 export default router;
+
+// ── Robô coletor (Authorization: Bearer <AUDIT_ROBOT_TOKEN>) ──────
+// Montado em /api/audit/robot ANTES do exigirUsuario: o robô não tem login,
+// só o token. As URLs continuam as mesmas para o robô.
+export const auditRobotRoutes = Router();
+auditRobotRoutes.use(robotAuth);
+auditRobotRoutes.post('/next-job',          postNextJob);
+auditRobotRoutes.post('/jobs/:id/folders',  postLote);
+auditRobotRoutes.post('/jobs/:id/finish',   postFinish);
+auditRobotRoutes.post('/jobs/:id/fail',     postFail);
+auditRobotRoutes.post('/texts/pending',     postTextosPendentes);   // honorário: o que ler
+auditRobotRoutes.post('/texts',             postTextos);            // honorário: texto lido

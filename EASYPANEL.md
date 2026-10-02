@@ -34,6 +34,19 @@ No painel do serviço `app`, vá em **Environment Variables** e adicione:
 | `GENERATED_DIR` | `/app/generated` |
 | `TEMPLATE_PATH` | `/app/templates/termo_aditivo.docx` |
 | `AUDIT_ROBOT_TOKEN` | *(token do robô da Auditoria, 32+ caracteres — o mesmo do `.env` do robô)* |
+| `ACESSORIAS_API_TOKEN` | *(token da API do Acessórias: engrenagem → API Token, no Acessórias. Sem ele, a tela de Honorários funciona, mas não envia)* |
+| `TRUST_PROXY` | *(opcional)* `1` = um proxy na frente (padrão em produção). Serve para o limite de tentativas de login ver o IP de verdade |
+
+**Contas de acesso (login, ADR-008):** depois da migration `007`, crie as contas no PC com o
+repositório (o `.env` da raiz aponta para o banco de produção):
+
+```bash
+npm --prefix src/backend run conta -- --login societario --nome "Societário"
+npm --prefix src/backend run conta -- --login controladoria --nome "Controladoria"
+```
+
+A senha aparece uma vez no terminal. Para trocar (e derrubar quem estiver logado):
+`npm --prefix src/backend run conta -- --login societario --nova-senha`.
 
 ---
 
