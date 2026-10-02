@@ -89,9 +89,51 @@ export function vinculoAutomatico(
 }
 
 export interface PastaIndexada {
-  nomePasta: string;
-  nomeBase:  string;
-  filial:    number | null;
+  nomePasta:    string;
+  nomeBase:     string;
+  /** Sem a sigla da frente ("SINCOPEÇAS - SINDICATO DO…" → "SINDICATO DO…"), ou null. */
+  nomeSemSigla: string | null;
+  filial:       number | null;
+}
+
+/**
+ * Pasta com sigla antes do " - ": "SINCOPEÇAS - SINDICATO DO COMERCIO VAREJISTA, ATACADISTA".
+ * Devolve o nome base do que vem depois, se tiver pelo menos 3 palavras; senão null
+ * ("BLD LOGÍSTICA - 12 FILIAL" não vira nada útil).
+ */
+export function nomeSemSigla(nomePasta: string): string | null {
+  const m = /^\s*\S[^-–]{0,24}?\s+[-–]\s+(.+)$/.exec(nomePasta);
+  if (!m) return null;
+  const resto = nomeBaseDaPasta(m[1]);
+  return resto.split(' ').length >= 3 ? resto : null;
+}
+
+/** Nota dada quando um nome é o começo do outro (pasta com razão social cortada). */
+export const SIMILARIDADE_NOME_CORTADO = 0.9;
+
+/**
+ * O nome mais curto é o começo do mais longo, palavra por palavra (a última pode estar
+ * cortada: "…NO ESTADO DO PAR" × "…NO ESTADO DO PARANA"). Pelo menos 3 palavras e
+ * 15 letras, para "TRANSPORTES SAO" não casar com metade da carteira.
+ */
+export function ehComecoDoNome(a: string, b: string): boolean {
+  const [curto, longo] = a.length <= b.length ? [a, b] : [b, a];
+  const c = curto.split(' ');
+  const l = longo.split(' ');
+  if (c.length < 3 || curto.length < 15 || c.length > l.length) return false;
+  return c.every((p, i) => (i === c.length - 1 ? l[i].startsWith(p) : l[i] === p));
+}
+
+/** Melhor nota entre os nomes da pasta e o nome da empresa (Dice ou "nome cortado"). */
+export function similaridadeDeNomes(nomesDaPasta: (string | null)[], nomeEmpresa: string): number {
+  let melhor = 0;
+  for (const n of nomesDaPasta) {
+    if (!n) continue;
+    let s = similaridade(n, nomeEmpresa);
+    if (s < SIMILARIDADE_NOME_CORTADO && ehComecoDoNome(n, nomeEmpresa)) s = SIMILARIDADE_NOME_CORTADO;
+    if (s > melhor) melhor = s;
+  }
+  return melhor;
 }
 
 export interface SugestaoDePasta {
@@ -103,8 +145,9 @@ export interface SugestaoDePasta {
 export function indexarPastas(nomes: string[]): PastaIndexada[] {
   return nomes.map((nomePasta) => ({
     nomePasta,
-    nomeBase: nomeBaseDaPasta(nomePasta),
-    filial:   filialDaPasta(nomePasta),
+    nomeBase:     nomeBaseDaPasta(nomePasta),
+    nomeSemSigla: nomeSemSigla(nomePasta),
+    filial:       filialDaPasta(nomePasta),
   }));
 }
 
@@ -141,7 +184,7 @@ export function sugerirPastas(
   const candidatas = pastas
     .map((p) => ({
       item: p,
-      s:    similaridade(empresa.nomeNormalizado, p.nomeBase),
+      s:    similaridadeDeNomes([p.nomeBase, p.nomeSemSigla], empresa.nomeNormalizado),
       bate: p.filial !== null && p.filial === empresa.ordemCnpj,
     }))
     .filter(({ s }) => s >= minimo);
@@ -167,12 +210,13 @@ export function sugerirEmpresas(
 ): Sugestao[] {
   const alvo = nomeBaseDaPasta(nomePasta);
   if (!alvo) return [];
+  const alvos = [alvo, nomeSemSigla(nomePasta)];
   const filial = filialDaPasta(nomePasta);
 
   const candidatas = empresas
     .map((e) => ({
       item: e,
-      s:    similaridade(alvo, e.nomeNormalizado),
+      s:    similaridadeDeNomes(alvos, e.nomeNormalizado),
       bate: filial !== null && e.ordemCnpj === filial,
     }))
     .filter(({ s }) => s >= minimo);
