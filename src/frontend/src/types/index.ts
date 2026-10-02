@@ -257,3 +257,78 @@ export interface AuditFiltrosAditivos {
   alerta?:      '1';
   decimo?:      'com' | 'pendente';
 }
+
+// ── Auditoria Contratos (Fase 2B) ───────────────────────────────────
+
+export type AuditStatusContrato =
+  | 'NAO_LOCALIZADO' | 'MINUTA' | 'AGUARDANDO_ASSINATURA' | 'REVISAR' | 'ASSINADO';
+
+export type AuditMotivoContrato =
+  | 'SEM_VINCULO' | 'SEM_PASTA_CONTRATO' | 'SEM_CONTRATO_SERVICO'
+  | 'MULTIPLOS_CONTRATOS_ATUAIS' | 'SOMENTE_CONTRATO_ANTIGO'
+  | 'CONTRATO_ASSINADO_PELO_NOME' | 'ARQUIVO_NAO_IDENTIFICADO' | 'PDF_NAO_ANALISADO'
+  | 'FORMATO_EXIGE_REVISAO' | 'CONTRATO_DIGITAL_ASSINADO'
+  | 'PDF_SEM_ASSINATURA' | 'APENAS_MINUTA';
+
+export interface AuditArquivoContrato {
+  nomePasta:       string;
+  caminhoRelativo: string;
+  nome:            string;
+  ext:             string;
+  modificadoEm:    string;
+  formato:         'word' | 'pdf' | 'imagem' | 'outro';
+  antigo:          boolean;
+  minuta:          boolean;
+  assinatura: {
+    digital:               boolean;
+    peloNome:              boolean;
+    explicitamenteAusente: boolean;
+    contraditoria:         boolean;
+    tecnicaLida:           boolean;
+  };
+  icp:             boolean;
+  identidade:      string;
+  motivos:         string[];
+  motivoExclusao:  string | null;
+}
+
+export interface AuditPlanoRenomeacao {
+  dryRun:          true;
+  executar:        false;
+  recomendado:     boolean;
+  caminhoOriginal: string;
+  caminhoDestino:  string | null;
+  resultado:       'recomendado' | 'ja_padronizado' | 'destino_existente';
+}
+
+export interface AuditEmpresaContrato {
+  empresa: { id: string; razaoSocial: string; cnpj: string; responsavel: string | null };
+  status:            AuditStatusContrato;
+  emDia:             boolean;
+  motivo:            AuditMotivoContrato;
+  pastas:            { nomePasta: string; subpastasContrato: string[] }[];
+  contratos:         AuditArquivoContrato[];
+  descartados:       AuditArquivoContrato[];
+  contratoPrincipal: AuditArquivoContrato | null;
+  warnings:          string[];
+  renomeacao:        AuditPlanoRenomeacao | null;
+}
+
+export interface AuditRelatorioContratos {
+  job:     AuditJob | null;
+  raizUnc: string;
+  resumo: {
+    empresas:  number;
+    emDia:     number;
+    revisar:   number;
+    marcadasSemPasta: number;
+    porStatus: Record<AuditStatusContrato, number>;
+  };
+  empresas: AuditEmpresaContrato[];
+}
+
+export interface AuditFiltrosContratos {
+  status?:      AuditStatusContrato | 'em_dia' | 'pendente' | 'assinado_digital' | 'assinado_pelo_nome';
+  responsavel?: string;
+  busca?:       string;
+}

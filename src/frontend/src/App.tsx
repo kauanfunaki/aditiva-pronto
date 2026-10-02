@@ -8,6 +8,7 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import AuditPastas from './pages/audit/Pastas';
 import AuditAditivos from './pages/audit/Aditivos';
+import AuditContratos from './pages/audit/Contratos';
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
             <Route path="configuracoes" element={<Settings />} />
             <Route path="auditoria/pastas" element={<AuditPastas />} />
             <Route path="auditoria/aditivos" element={<AuditAditivos />} />
+            <Route path="auditoria/contratos" element={<AuditContratos />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

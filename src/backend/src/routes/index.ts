@@ -13,6 +13,7 @@ import {
 } from '../controllers/responsaveisController';
 import auditRoutes from './audit';
 import auditAditivosRoutes from './auditAditivos';
+import auditContratosRoutes from './auditContratos';
 
 const router = Router();
 
@@ -52,6 +53,7 @@ router.delete('/responsaveis/:id', removeResponsavel);
 
 // ── Auditoria de Contratos e Aditivos ─────────────────────────────
 router.use('/audit/aditivos', auditAditivosRoutes);
+router.use('/audit/contratos', auditContratosRoutes);
 router.use('/audit', auditRoutes);
 
 export default router;

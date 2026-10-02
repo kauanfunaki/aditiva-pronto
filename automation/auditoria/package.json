@@ -1,0 +1,18 @@
+{
+  "name": "aditiva-pronto-auditoria-robot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Coletor somente leitura da auditoria de contratos e aditivos",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "once": "node index.js --once",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "os": [
+    "win32"
+  ]
+}
