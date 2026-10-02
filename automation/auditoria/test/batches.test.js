@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { criarLotes } = require('../src/batches');
+const { criarAcumuladorLotes, criarLotes } = require('../src/batches');
 
 function pasta(nome, arquivos) {
   return { nomePasta: nome, arquivos: Array.from({ length: arquivos }, (_, i) => ({ nome: `${i}.pdf` })) };
@@ -26,4 +26,13 @@ test('uma pasta acima do alvo segue inteira e respeita o limite absoluto da API'
     () => criarLotes([pasta('GRANDE DEMAIS', 6)], { maxArquivosPorLote: 5 }),
     /acima do limite da API/,
   );
+});
+
+test('acumulador libera lote assim que o alvo é atingido durante a varredura', () => {
+  const acumulador = criarAcumuladorLotes();
+  for (let i = 0; i < 49; i++) assert.deepEqual(acumulador.adicionar(pasta(`P${i}`, 0)), []);
+  const prontos = acumulador.adicionar(pasta('P49', 0));
+  assert.equal(prontos.length, 1);
+  assert.equal(prontos[0].length, 50);
+  assert.deepEqual(acumulador.finalizar(), []);
 });

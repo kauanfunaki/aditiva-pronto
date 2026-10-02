@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {
   compilarRegex,
+  ehArquivoSistema,
   listarPastasRaiz,
   semAcentoMaiusculo,
   varrerPasta,
@@ -23,6 +24,13 @@ async function comPastaTemporaria(fn) {
 
 test('normaliza acentos, espaços e caixa', () => {
   assert.equal(semAcentoMaiusculo('  Contrato   de Prestação  '), 'CONTRATO DE PRESTACAO');
+});
+
+test('reconhece arquivos temporários e metadados do sistema', () => {
+  for (const nome of ['._CONTRATO ASSINADO.pdf', 'Thumbs.db', '~$contrato.docx', '.DS_Store', 'desktop.ini']) {
+    assert.equal(ehArquivoSistema(nome), true, nome);
+  }
+  assert.equal(ehArquivoSistema('CONTRATO ASSINADO.pdf'), false);
 });
 
 test('seleciona somente diretórios dentro do intervalo normalizado', async () => {
@@ -48,6 +56,9 @@ test('varre recursivamente apenas subpastas de contrato do primeiro nível', asy
     await fs.mkdir(path.join(cliente, 'CONTRATO DE ALUGUEL'));
     await fs.writeFile(path.join(contratos, 'Contrato atual.pdf'), '%PDF /ByteRange ICP-Brasil');
     await fs.writeFile(path.join(contratos, 'ANTIGOS', 'Contrato antigo.docx'), 'docx');
+    await fs.writeFile(path.join(contratos, '._CONTRATO ASSINADO.pdf'), '%PDF /ByteRange');
+    await fs.writeFile(path.join(contratos, '~$Contrato atual.docx'), 'temporário');
+    await fs.writeFile(path.join(contratos, 'Thumbs.db'), 'metadado');
     await fs.writeFile(path.join(cliente, 'CONTRATO DE ALUGUEL', 'aluguel.pdf'), '%PDF');
 
     const resultado = await varrerPasta(

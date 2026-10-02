@@ -44,3 +44,42 @@ test('executa um job completo e envia totais consistentes', async () => {
     await fs.rm(raiz, { recursive: true, force: true });
   }
 });
+
+test('envia o primeiro lote antes de terminar a varredura completa', async () => {
+  const raiz = await fs.mkdtemp(path.join(os.tmpdir(), 'audit-job-progress-'));
+  try {
+    const nomes = Array.from({ length: 51 }, (_, i) => `CLIENTE ${String(i).padStart(2, '0')}`);
+    await Promise.all(nomes.map((nome) => fs.mkdir(path.join(raiz, nome))));
+
+    let pastasLidas = 0;
+    const envios = [];
+    const loggerProgresso = {
+      debug(mensagem) { if (mensagem === 'Pasta lida.') pastasLidas++; },
+      info() {}, warn() {}, error() {},
+    };
+    const api = {
+      async enviarLote(_id, lote) { envios.push({ quando: pastasLidas, quantidade: lote.pastas.length }); },
+      async concluir() { return { vinculosAutomaticos: 0 }; },
+      async falhar() {},
+    };
+    const trabalho = {
+      job: { id: 'job-progress', origem: 'manual', retomada: false },
+      config: {
+        raizUnc: raiz,
+        pastaInicial: nomes[0],
+        pastaFinal: nomes[nomes.length - 1],
+        regexSubpastaContrato: '^CONTRATO',
+        normalizacao: 'semAcentoMaiusculo',
+      },
+      limites: { maxPastasPorLote: 500, maxArquivosPorLote: 5000 },
+    };
+
+    await executarJob({ api, trabalho, logger: loggerProgresso, signal: new AbortController().signal });
+    assert.deepEqual(envios, [
+      { quando: 50, quantidade: 50 },
+      { quando: 51, quantidade: 1 },
+    ]);
+  } finally {
+    await fs.rm(raiz, { recursive: true, force: true });
+  }
+});

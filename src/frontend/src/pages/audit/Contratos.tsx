@@ -31,8 +31,9 @@ const MOTIVO: Record<AuditMotivoContrato, string> = {
   SEM_CONTRATO_SERVICO: 'Contrato de prestação de serviços não localizado',
   MULTIPLOS_CONTRATOS_ATUAIS: 'Múltiplos contratos diferentes',
   SOMENTE_CONTRATO_ANTIGO: 'Somente contrato marcado como antigo',
-  POSSIVEL_ASSINATURA_FISICA: 'Possível assinatura física — conferir documento',
-  EVIDENCIA_CONTRADITORIA: 'Evidências de assinatura contraditórias',
+  CONTRATO_ASSINADO_PELO_NOME: 'Assinado pela indicação no nome',
+  ARQUIVO_NAO_IDENTIFICADO: 'PDF ou imagem exige identificação manual',
+  PDF_NAO_ANALISADO: 'PDF não analisado tecnicamente pelo coletor',
   FORMATO_EXIGE_REVISAO: 'Formato exige conferência manual',
   CONTRATO_DIGITAL_ASSINADO: 'Assinatura digital detectada',
   PDF_SEM_ASSINATURA: 'PDF sem assinatura digital',
@@ -45,7 +46,10 @@ const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLo
 function passa(item: AuditEmpresaContrato, status: FiltroStatus | '', responsavel: string, busca: string) {
   if (status === 'em_dia' && !item.emDia) return false;
   if (status === 'pendente' && item.emDia) return false;
-  if (status && status !== 'em_dia' && status !== 'pendente' && item.status !== status) return false;
+  if (status === 'assinado_digital' && item.motivo !== 'CONTRATO_DIGITAL_ASSINADO') return false;
+  if (status === 'assinado_pelo_nome' && item.motivo !== 'CONTRATO_ASSINADO_PELO_NOME') return false;
+  if (status && !['em_dia', 'pendente', 'assinado_digital', 'assinado_pelo_nome'].includes(status)
+    && item.status !== status) return false;
   if (responsavel === '__none__' && item.empresa.responsavel) return false;
   if (responsavel && responsavel !== '__none__' && item.empresa.responsavel !== responsavel) return false;
   if (busca) {
@@ -140,6 +144,8 @@ export default function Contratos() {
     { id: '', rotulo: 'Todas', qtd: resumo.empresas },
     { id: 'pendente', rotulo: 'Pendentes', qtd: resumo.empresas - resumo.emDia },
     { id: 'em_dia', rotulo: 'Em dia', qtd: resumo.emDia },
+    { id: 'assinado_digital', rotulo: 'Assinado digital', qtd: data?.empresas.filter((e) => e.motivo === 'CONTRATO_DIGITAL_ASSINADO').length ?? 0 },
+    { id: 'assinado_pelo_nome', rotulo: 'Assinado pelo nome', qtd: data?.empresas.filter((e) => e.motivo === 'CONTRATO_ASSINADO_PELO_NOME').length ?? 0 },
     ...STATUS.map((s) => ({ id: s.id, rotulo: s.rotulo, qtd: resumo.porStatus[s.id] })),
   ] : [];
 
@@ -149,8 +155,8 @@ export default function Contratos() {
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-zinc-100">Auditoria de contratos</h1>
           <p className="text-sm text-gray-500 dark:text-zinc-400 mt-0.5 max-w-3xl">
-            Contratos de prestação de serviços das empresas ativas. Arquivo com “assinado” no nome,
-            mas sem assinatura digital, permanece em revisão para conferência de assinatura física.
+            Contratos de prestação de serviços das empresas ativas. Conforme a regra do Societário,
+            “assinado” no nome conta como assinado e permanece identificado separadamente da assinatura digital.
           </p>
         </div>
         <button type="button" className="btn-outline shrink-0 min-h-[44px]" onClick={exportar}
@@ -179,7 +185,7 @@ export default function Contratos() {
             <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
               <p className="text-gray-800 dark:text-zinc-200">
                 <span className="text-3xl font-bold tabular-nums">{resumo.emDia.toLocaleString('pt-BR')}</span>
-                <span className="text-sm text-gray-500 dark:text-zinc-400"> de {resumo.empresas.toLocaleString('pt-BR')} empresas com contrato assinado digitalmente</span>
+                <span className="text-sm text-gray-500 dark:text-zinc-400"> de {resumo.empresas.toLocaleString('pt-BR')} empresas com contrato assinado</span>
               </p>
               <span className="text-2xl font-semibold tabular-nums text-gray-700 dark:text-zinc-300">{percentual}%</span>
             </div>
@@ -278,7 +284,7 @@ export default function Contratos() {
                           <div className="flex justify-end">
                             {item.pastas.length ? <button type="button" className="btn-outline min-h-[44px] px-3 py-1.5 whitespace-nowrap"
                               onClick={() => copiarCaminho(item)}><Copy size={14} /> Copiar caminho</button>
-                              : <Link to="/auditoria/pastas" className="btn-outline min-h-[44px] px-3 py-1.5 whitespace-nowrap">Vincular pasta</Link>}
+                              : <Link to="/auditoria/pastas?aba=empresas" className="btn-outline min-h-[44px] px-3 py-1.5 whitespace-nowrap">Vincular pasta</Link>}
                           </div>
                         </td>
                       </tr>
@@ -324,7 +330,8 @@ function ListaArquivos({ titulo, arquivos, principal, apagado = false }: {
         <span className="text-gray-900 dark:text-zinc-100 break-all">{arquivo.caminhoRelativo}</span>
         {arquivo.caminhoRelativo === principal && <span className="text-xs font-medium text-brand-700 dark:text-brand-300">selecionado</span>}
         <span className="text-xs text-gray-500 dark:text-zinc-400">
-          {arquivo.assinatura.digital ? ' · assinatura digital' : arquivo.assinatura.peloNome ? ' · assinado no nome (revisar)' : ''}
+          {arquivo.assinatura.digital ? ' · assinatura digital' : arquivo.assinatura.peloNome ? ' · assinado pelo nome' : ''}
+          {arquivo.formato === 'pdf' && !arquivo.assinatura.tecnicaLida ? ' · conteúdo não analisado' : ''}
           {arquivo.icp ? ' · ICP-Brasil' : ''}{arquivo.antigo ? ' · antigo' : ''}{arquivo.motivoExclusao ? ` · ${arquivo.motivoExclusao}` : ''}
         </span>
       </li>)}

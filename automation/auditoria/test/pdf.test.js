@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { analisarPdfBuffer, MARCA_ICP_HEX } = require('../src/pdf');
+const { analisarPdf, analisarPdfBuffer, MARCA_ICP_HEX, MAX_PDF_BYTES } = require('../src/pdf');
 
 test('PDF sem ByteRange não é assinado', () => {
   assert.deepEqual(analisarPdfBuffer(Buffer.from('%PDF-1.7 arquivo comum')), {
@@ -31,4 +31,9 @@ test('detecta ICP-Brasil literal e hexadecimal somente em PDF assinado', () => {
     assinado: false,
     marca: null,
   });
+});
+
+test('não abre PDF acima do teto de memória', async () => {
+  // O caminho não existe: retornar null prova que o limite foi verificado antes da leitura.
+  assert.equal(await analisarPdf('arquivo-que-nao-existe.pdf', MAX_PDF_BYTES + 1), null);
 });

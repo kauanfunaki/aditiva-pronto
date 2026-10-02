@@ -23,6 +23,10 @@ por inteiro; por isso, esse comando não é um dry run.
 - caminho relativo, nome, extensão, tamanho e data de modificação dos arquivos;
 - para PDFs, presença de assinatura digital (`/ByteRange`) e marca ICP-Brasil.
 
+Arquivos temporários do Office, AppleDouble, `Thumbs.db`, `.DS_Store` e `desktop.ini`
+são ignorados. PDFs acima de 30 MB não são carregados na memória e ficam sinalizados
+como não analisados para revisão no app.
+
 O conteúdo dos documentos não é enviado. Nome indicando `ASSINADO` sem assinatura digital
 será tratado pelo módulo de Contratos como revisão manual de possível assinatura física.
 
@@ -33,3 +37,4 @@ As mensagens são escritas em `stdout`/`stderr`, adequadas para captura pelo ger
 serviço. O app cria o job diário; não configure um segundo agendador no robô.
 
 Em caso de reinício, o mesmo job é retomado desde o começo. O reenvio é idempotente por pasta.
+Os lotes são enviados enquanto a varredura avança, mantendo o progresso e a atividade do job.

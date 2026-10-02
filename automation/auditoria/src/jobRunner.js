@@ -1,6 +1,6 @@
 'use strict';
 
-const { criarLotes } = require('./batches');
+const { criarAcumuladorLotes } = require('./batches');
 const { compilarRegex, listarPastasRaiz, mensagemErro, varrerPasta } = require('./scanner');
 const { ApiError, JobInativoError } = require('./apiClient');
 
@@ -27,13 +27,26 @@ async function executarJob({ api, trabalho, logger, signal }) {
 
     const regex = compilarRegex(config.regexSubpastaContrato);
     const nomes = await listarPastasRaiz(config);
-    const pastas = [];
+    const acumulador = criarAcumuladorLotes(limites);
+    let pastasLidas = 0;
+    let arquivosLidos = 0;
+    let pastasEnviadas = 0;
+    let numeroLote = 0;
+
+    const enviar = async (pastas) => {
+      if (signal?.aborted) throw new Error('Operação cancelada.');
+      await api.enviarLote(job.id, { totalPastas: nomes.length, pastas });
+      numeroLote++;
+      pastasEnviadas += pastas.length;
+      logger.info('Lote enviado.', { jobId: job.id, lote: numeroLote, pastasEnviadas, totalPastas: nomes.length });
+    };
 
     logger.info('Pastas da raiz selecionadas.', { jobId: job.id, totalPastas: nomes.length });
     for (let i = 0; i < nomes.length; i++) {
       if (signal?.aborted) throw new Error('Operação cancelada.');
       const pasta = await varrerPasta(config.raizUnc, nomes[i], regex);
-      pastas.push(pasta);
+      pastasLidas++;
+      arquivosLidos += pasta.arquivos.length;
       logger.debug('Pasta lida.', {
         jobId: job.id,
         pasta: pasta.nomePasta,
@@ -41,21 +54,13 @@ async function executarJob({ api, trabalho, logger, signal }) {
         erro: pasta.erro,
         progresso: `${i + 1}/${nomes.length}`,
       });
+      for (const lote of acumulador.adicionar(pasta)) await enviar(lote);
     }
-
-    const lotes = criarLotes(pastas, limites);
-    let enviados = 0;
-    for (let i = 0; i < lotes.length; i++) {
-      if (signal?.aborted) throw new Error('Operação cancelada.');
-      const lote = { totalPastas: nomes.length, pastas: lotes[i] };
-      await api.enviarLote(job.id, lote);
-      enviados += lote.pastas.length;
-      logger.info('Lote enviado.', { jobId: job.id, lote: i + 1, lotes: lotes.length, pastasEnviadas: enviados });
-    }
+    for (const lote of acumulador.finalizar()) await enviar(lote);
 
     const totais = {
-      pastas: pastas.length,
-      arquivos: pastas.reduce((total, pasta) => total + pasta.arquivos.length, 0),
+      pastas: pastasLidas,
+      arquivos: arquivosLidos,
     };
     const resposta = await api.concluir(job.id, totais);
     logger.info('Job concluído.', { jobId: job.id, ...totais, vinculosAutomaticos: resposta.vinculosAutomaticos });

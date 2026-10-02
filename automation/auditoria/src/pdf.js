@@ -3,6 +3,7 @@
 const fs = require('node:fs/promises');
 
 const MARCA_ICP_HEX = '4943502d42726173696c';
+const MAX_PDF_BYTES = 30 * 1024 * 1024;
 
 function analisarPdfBuffer(buffer) {
   const texto = buffer.toString('latin1');
@@ -13,8 +14,11 @@ function analisarPdfBuffer(buffer) {
   return { assinado, marca: icp ? 'icp' : null };
 }
 
-async function analisarPdf(caminho) {
+/** Retorna null sem ler o conteúdo quando o PDF ultrapassa o teto de memória. */
+async function analisarPdf(caminho, tamanhoConhecido) {
+  const tamanho = tamanhoConhecido ?? (await fs.stat(caminho)).size;
+  if (tamanho > MAX_PDF_BYTES) return null;
   return analisarPdfBuffer(await fs.readFile(caminho));
 }
 
-module.exports = { analisarPdf, analisarPdfBuffer, MARCA_ICP_HEX };
+module.exports = { analisarPdf, analisarPdfBuffer, MARCA_ICP_HEX, MAX_PDF_BYTES };

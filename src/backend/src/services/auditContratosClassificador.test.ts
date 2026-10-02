@@ -45,12 +45,32 @@ describe('classificarContrato', () => {
     ['CONTRATO DE LOCAÇÃO.pdf', 'aluguel_locacao_coworking'],
     ['CONTRATO COWORKING.pdf', 'aluguel_locacao_coworking'],
     ['CONTRATO SOCIAL.pdf', 'contrato_social'],
-    ['CONTRATO DE HONORÁRIOS.pdf', 'honorarios'],
     ['MODELO CONTRATO SERVIÇOS.pdf', 'modelo'],
     ['BOLETO.pdf', 'nao_parece_contrato'],
   ] as const)('exclui %s como %s', (nome, motivo) => {
     expect(c(nome)).toMatchObject({ ehContratoServico: false, motivoExclusao: motivo });
   });
+
+  it('aceita erro de digitação próximo de contrato', () => {
+    expect(c('Contarto de Prestação de Serviço.pdf')).toMatchObject({ ehContratoServico: true });
+  });
+
+  it('não transforma palavra apenas parecida em contrato sem sinal de serviço', () => {
+    expect(c('CONTATO EMPRESA.pdf')).toMatchObject({
+      ehContratoServico: false,
+      motivoExclusao: 'nao_parece_contrato',
+    });
+  });
+
+  it('não exclui contrato verdadeiro só porque honorário aparece no complemento', () => {
+    expect(c('FC COMERCIO - Contrato de Serviços (novo honorario - não assinado).pdf'))
+      .toMatchObject({ ehContratoServico: true, motivoExclusao: null });
+  });
+
+  it.each(['._CONTRATO ASSINADO.pdf', '~$CONTRATO.docx', 'Thumbs.db', '.DS_Store'])
+    ('exclui arquivo de sistema: %s', (nome) => {
+      expect(c(nome)).toMatchObject({ ehContratoServico: false, motivoExclusao: 'arquivo_sistema' });
+    });
 
   it('detecta antigo e minuta sem descartar o contrato', () => {
     expect(c('CONTRATO PRESTAÇÃO DE SERVIÇOS (ANTIGO).pdf')).toMatchObject({
@@ -86,6 +106,11 @@ describe('assinatura', () => {
       icp: true,
       assinatura: { digital: true, peloNome: false, explicitamenteAusente: true, contraditoria: true },
     });
+  });
+
+  it('distingue PDF que não foi tecnicamente lido', () => {
+    expect(c('CONTRATO.pdf', { pdfAssinado: null }).assinatura.tecnicaLida).toBe(false);
+    expect(c('CONTRATO.pdf', { pdfAssinado: false }).assinatura.tecnicaLida).toBe(true);
   });
 });
 

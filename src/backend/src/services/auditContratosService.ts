@@ -26,8 +26,9 @@ export const ROTULO_MOTIVO_CONTRATO: Record<MotivoStatusContrato, string> = {
   SEM_CONTRATO_SERVICO:           'Contrato de prestação de serviços não localizado',
   MULTIPLOS_CONTRATOS_ATUAIS:     'Múltiplos contratos diferentes',
   SOMENTE_CONTRATO_ANTIGO:        'Somente contrato marcado como antigo',
-  POSSIVEL_ASSINATURA_FISICA:     'Possível assinatura física — conferir documento',
-  EVIDENCIA_CONTRADITORIA:        'Evidências de assinatura contraditórias',
+  CONTRATO_ASSINADO_PELO_NOME:    'Assinado pela indicação no nome',
+  ARQUIVO_NAO_IDENTIFICADO:       'PDF ou imagem exige identificação manual',
+  PDF_NAO_ANALISADO:              'PDF não analisado tecnicamente pelo coletor',
   FORMATO_EXIGE_REVISAO:          'Formato exige conferência manual',
   CONTRATO_DIGITAL_ASSINADO:      'Assinatura digital detectada',
   PDF_SEM_ASSINATURA:             'PDF sem assinatura digital',
@@ -43,7 +44,10 @@ export interface ArquivoContratoResumo {
   formato:         string;
   antigo:          boolean;
   minuta:          boolean;
-  assinatura:      { digital: boolean; peloNome: boolean; explicitamenteAusente: boolean; contraditoria: boolean };
+  assinatura:      {
+    digital: boolean; peloNome: boolean; explicitamenteAusente: boolean;
+    contraditoria: boolean; tecnicaLida: boolean;
+  };
   icp:             boolean;
   identidade:      string;
   motivos:         string[];
@@ -157,7 +161,7 @@ export async function montarRelatorioContratos(): Promise<RelatorioContratos> {
     const suasPastas = pastasPorEmpresa.get(empresa.id) ?? [];
     const resultado = calcularStatusContrato(suasPastas);
     const caminhos = suasPastas.flatMap((p) => p.arquivos.map((a) => a.caminhoRelativo));
-    const renomeacao = resultado.status === 'ASSINADO' && resultado.contratoPrincipal
+    const renomeacao = resultado.status === 'ASSINADO' && resultado.contratoPrincipal && resultado.gruposAtuais.length === 1
       ? planejarRenomeacaoContrato(resultado.contratoPrincipal, caminhos)
       : null;
 
@@ -200,7 +204,7 @@ export async function montarRelatorioContratos(): Promise<RelatorioContratos> {
 }
 
 export interface FiltrosContratos {
-  status?:      StatusContrato | 'em_dia' | 'pendente';
+  status?:      StatusContrato | 'em_dia' | 'pendente' | 'assinado_digital' | 'assinado_pelo_nome';
   responsavel?: string;
   busca?:       string;
 }
@@ -213,7 +217,10 @@ export function filtrarEmpresasContratos(empresas: EmpresaContrato[], filtros: F
   return empresas.filter((item) => {
     if (filtros.status === 'em_dia' && !item.emDia) return false;
     if (filtros.status === 'pendente' && item.emDia) return false;
-    if (filtros.status && filtros.status !== 'em_dia' && filtros.status !== 'pendente' && item.status !== filtros.status) return false;
+    if (filtros.status === 'assinado_digital' && item.motivo !== 'CONTRATO_DIGITAL_ASSINADO') return false;
+    if (filtros.status === 'assinado_pelo_nome' && item.motivo !== 'CONTRATO_ASSINADO_PELO_NOME') return false;
+    if (filtros.status && !['em_dia', 'pendente', 'assinado_digital', 'assinado_pelo_nome'].includes(filtros.status)
+      && item.status !== filtros.status) return false;
     if (filtros.responsavel === '__none__' && item.empresa.responsavel) return false;
     if (filtros.responsavel && filtros.responsavel !== '__none__' && item.empresa.responsavel !== filtros.responsavel) return false;
     if (termo) {
@@ -230,7 +237,7 @@ export function gerarXlsxContratos(relatorio: RelatorioContratos, empresas: Empr
   const cabecalho = [
     'Empresa', 'CNPJ', 'Responsável', 'Status', 'Motivo', 'Em dia',
     'Pasta(s) na rede', 'Contrato selecionado', 'Assinatura digital',
-    'Possível assinatura física', 'Avisos', 'Renomeação (dry run)',
+    'Assinado pelo nome', 'Avisos', 'Renomeação (dry run)',
   ];
   const linhas = empresas.map((item) => [
     item.empresa.razaoSocial,
@@ -242,7 +249,7 @@ export function gerarXlsxContratos(relatorio: RelatorioContratos, empresas: Empr
     item.pastas.map((p) => p.nomePasta).join('; '),
     item.contratoPrincipal?.nome ?? '',
     item.contratoPrincipal?.assinatura.digital ? 'Sim' : 'Não',
-    item.motivo === 'POSSIVEL_ASSINATURA_FISICA' ? 'Revisar' : '',
+    item.motivo === 'CONTRATO_ASSINADO_PELO_NOME' ? 'Sim (aceita pelo nome)' : '',
     item.warnings.join('; '),
     item.renomeacao?.recomendado ? item.renomeacao.caminhoDestino ?? '' : '',
   ]);

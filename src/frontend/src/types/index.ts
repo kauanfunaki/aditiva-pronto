@@ -266,7 +266,7 @@ export type AuditStatusContrato =
 export type AuditMotivoContrato =
   | 'SEM_VINCULO' | 'SEM_PASTA_CONTRATO' | 'SEM_CONTRATO_SERVICO'
   | 'MULTIPLOS_CONTRATOS_ATUAIS' | 'SOMENTE_CONTRATO_ANTIGO'
-  | 'POSSIVEL_ASSINATURA_FISICA' | 'EVIDENCIA_CONTRADITORIA'
+  | 'CONTRATO_ASSINADO_PELO_NOME' | 'ARQUIVO_NAO_IDENTIFICADO' | 'PDF_NAO_ANALISADO'
   | 'FORMATO_EXIGE_REVISAO' | 'CONTRATO_DIGITAL_ASSINADO'
   | 'PDF_SEM_ASSINATURA' | 'APENAS_MINUTA';
 
@@ -284,6 +284,7 @@ export interface AuditArquivoContrato {
     peloNome:              boolean;
     explicitamenteAusente: boolean;
     contraditoria:         boolean;
+    tecnicaLida:           boolean;
   };
   icp:             boolean;
   identidade:      string;
@@ -327,7 +328,7 @@ export interface AuditRelatorioContratos {
 }
 
 export interface AuditFiltrosContratos {
-  status?:      AuditStatusContrato | 'em_dia' | 'pendente';
+  status?:      AuditStatusContrato | 'em_dia' | 'pendente' | 'assinado_digital' | 'assinado_pelo_nome';
   responsavel?: string;
   busca?:       string;
 }

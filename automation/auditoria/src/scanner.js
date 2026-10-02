@@ -2,7 +2,7 @@
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { analisarPdf } = require('./pdf');
+const { analisarPdf, MAX_PDF_BYTES } = require('./pdf');
 
 function semAcentoMaiusculo(texto) {
   return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
@@ -11,6 +11,11 @@ function semAcentoMaiusculo(texto) {
 function mensagemErro(err) {
   const texto = err instanceof Error ? err.message : String(err);
   return texto.slice(0, 1000);
+}
+
+function ehArquivoSistema(nome) {
+  const n = nome.normalize('NFC');
+  return n.startsWith('._') || n.startsWith('~$') || /^(THUMBS\.DB|\.DS_STORE|DESKTOP\.INI)$/i.test(n);
 }
 
 async function listarPastasRaiz(config) {
@@ -43,6 +48,7 @@ async function listarArquivosRecursivamente(raizCliente, diretorio, arquivos, er
       continue;
     }
     if (!entrada.isFile()) continue;
+    if (ehArquivoSistema(entrada.name)) continue;
 
     try {
       const stat = await fs.stat(caminho);
@@ -54,7 +60,13 @@ async function listarArquivosRecursivamente(raizCliente, diretorio, arquivos, er
         tamanho: stat.size,
         modificadoEm: stat.mtime.toISOString(),
       };
-      if (ext === '.pdf') arquivo.pdf = await analisarPdf(caminho);
+      if (ext === '.pdf') {
+        const pdf = await analisarPdf(caminho, stat.size);
+        if (pdf) arquivo.pdf = pdf;
+        else erros.push(
+          `${arquivo.caminhoRelativo}: PDF não analisado por exceder ${Math.round(MAX_PDF_BYTES / 1024 / 1024)} MB`,
+        );
+      }
       arquivos.push(arquivo);
     } catch (err) {
       erros.push(`${path.relative(raizCliente, caminho)}: ${mensagemErro(err)}`);
@@ -95,6 +107,7 @@ function compilarRegex(texto) {
 
 module.exports = {
   compilarRegex,
+  ehArquivoSistema,
   listarPastasRaiz,
   mensagemErro,
   semAcentoMaiusculo,

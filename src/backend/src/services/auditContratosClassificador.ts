@@ -13,8 +13,8 @@ export type MotivoExclusaoContrato =
   | 'alteracao_contratual'
   | 'aluguel_locacao_coworking'
   | 'contrato_social'
-  | 'honorarios'
   | 'modelo'
+  | 'arquivo_sistema'
   | 'nao_parece_contrato';
 
 export interface ArquivoParaClassificarContrato {
@@ -31,6 +31,8 @@ export interface EvidenciasAssinatura {
   peloNome:              boolean;
   explicitamenteAusente: boolean;
   contraditoria:         boolean;
+  /** false em PDF cujo conteúdo não pôde ser inspecionado pelo coletor. */
+  tecnicaLida:           boolean;
 }
 
 export interface ClassificacaoContrato {
@@ -65,7 +67,38 @@ function contemSequencia(palavras: string[], ...sequencia: string[]): boolean {
   return palavras.some((_, inicio) => sequencia.every((p, i) => palavras[inicio + i] === p));
 }
 
-function detectarExclusao(ps: string[], caminhoPs: string[]): MotivoExclusaoContrato | null {
+function distanciaEdicao(a: string, b: string): number {
+  const linha = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let anterior = linha[0];
+    linha[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const guardado = linha[j];
+      linha[j] = Math.min(
+        linha[j] + 1,
+        linha[j - 1] + 1,
+        anterior + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+      anterior = guardado;
+    }
+  }
+  return linha[b.length];
+}
+
+/** CONTRATO(S) e erros curtos encontrados na rede, como CONTARTO. */
+export function pareceContrato(palavra: string): boolean {
+  if (palavra === 'CONTRATO' || palavra === 'CONTRATOS') return true;
+  if (!palavra.startsWith('CON') || palavra.length < 6 || palavra.length > 10) return false;
+  return distanciaEdicao(palavra, 'CONTRATO') <= 2 || distanciaEdicao(palavra, 'CONTRATOS') <= 2;
+}
+
+export function ehNomeArquivoSistema(nome: string): boolean {
+  const n = nome.normalize('NFC');
+  return n.startsWith('._') || n.startsWith('~$') || /^(THUMBS\.DB|\.DS_STORE|DESKTOP\.INI)$/i.test(n);
+}
+
+function detectarExclusao(nome: string, ps: string[], caminhoPs: string[]): MotivoExclusaoContrato | null {
+  if (ehNomeArquivoSistema(nome)) return 'arquivo_sistema';
   if (caminhoPs.some((p) => p.startsWith('ADITIV')) || contemSequencia(caminhoPs, 'TERMO', 'ADITIVO')) return 'aditivo';
   if (caminhoPs.some((p) => p.startsWith('DISTRAT'))) return 'distrato';
   if (contemSequencia(ps, 'ABERTURA', 'DE', 'EMPRESA') || contemSequencia(ps, 'ABERTURA', 'EMPRESA')) {
@@ -76,9 +109,13 @@ function detectarExclusao(ps: string[], caminhoPs: string[]): MotivoExclusaoCont
   }
   if (ps.some((p) => ['ALUGUEL', 'LOCACAO', 'COWORKING'].includes(p))) return 'aluguel_locacao_coworking';
   if (contemSequencia(ps, 'CONTRATO', 'SOCIAL')) return 'contrato_social';
-  if (ps.some((p) => p.startsWith('HONORARI'))) return 'honorarios';
   if (caminhoPs.some((p) => p === 'MODELO' || p === 'MODELOS')) return 'modelo';
-  if (!ps.some((p) => p === 'CONTRATO' || p === 'CONTRATOS')) return 'nao_parece_contrato';
+  const contratoExato = ps.some((p) => p === 'CONTRATO' || p === 'CONTRATOS');
+  const contratoComErro = ps.some(pareceContrato);
+  const sinalDeServico = ps.some((p) => p.startsWith('PREST') || p.startsWith('SERVI'));
+  // A tolerância de edição só é suficiente quando o restante do nome também fala
+  // de prestação/serviço; assim "CONTATO" não vira contrato por engano.
+  if (!contratoExato && !(contratoComErro && sinalDeServico)) return 'nao_parece_contrato';
   return null;
 }
 
@@ -103,6 +140,7 @@ export function detectarAssinaturaContrato(
     peloNome,
     explicitamenteAusente,
     contraditoria: digital && explicitamenteAusente,
+    tecnicaLida: formato !== 'pdf' || pdfAssinado !== null,
   };
 }
 
@@ -135,7 +173,7 @@ export function classificarContrato(a: ArquivoParaClassificarContrato): Classifi
     : a.nome;
   const ps = palavrasContrato(semExt);
   const caminhoPs = palavrasContrato(a.caminhoRelativo);
-  const motivoExclusao = detectarExclusao(ps, caminhoPs);
+  const motivoExclusao = detectarExclusao(a.nome, ps, caminhoPs);
   const formato = formatoDe(a.ext);
   const assinatura = detectarAssinaturaContrato(semExt, formato, a.pdfAssinado);
   const antigo = caminhoPs.some((p) => ['ANTIGO', 'ANTIGA', 'OLD'].includes(p));

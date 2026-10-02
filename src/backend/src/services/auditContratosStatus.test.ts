@@ -42,9 +42,9 @@ describe('calcularStatusContrato', () => {
       .toMatchObject({ status: 'AGUARDANDO_ASSINATURA', motivo: 'PDF_SEM_ASSINATURA' });
   });
 
-  it('nome assinado sem assinatura digital exige revisão física manual', () => {
+  it('decisão do Societário: nome assinado conta como assinado, com motivo próprio', () => {
     expect(calcularStatusContrato([pasta(arq('ASSINADO - CONTRATO DE SERVIÇOS.pdf'))]))
-      .toMatchObject({ status: 'REVISAR', motivo: 'POSSIVEL_ASSINATURA_FISICA', emDia: false });
+      .toMatchObject({ status: 'ASSINADO', motivo: 'CONTRATO_ASSINADO_PELO_NOME', emDia: true });
   });
 
   it('assinatura digital deixa em dia', () => {
@@ -52,9 +52,9 @@ describe('calcularStatusContrato', () => {
       .toMatchObject({ status: 'ASSINADO', motivo: 'CONTRATO_DIGITAL_ASSINADO', emDia: true });
   });
 
-  it('contradição é revisão, mesmo com assinatura digital', () => {
+  it('assinatura digital prevalece sobre nome contraditório e mantém aviso', () => {
     expect(calcularStatusContrato([pasta(arq('CONTRATO - Sem assinatura.pdf', { pdfAssinado: true }))]))
-      .toMatchObject({ status: 'REVISAR', motivo: 'EVIDENCIA_CONTRADITORIA' });
+      .toMatchObject({ status: 'ASSINADO', motivo: 'CONTRATO_DIGITAL_ASSINADO', warnings: { length: 1 } });
   });
 
   it('prioriza contrato atual sobre o marcado como antigo', () => {
@@ -72,10 +72,50 @@ describe('calcularStatusContrato', () => {
 
   it('contratos logicamente distintos exigem revisão; data não escolhe entre eles', () => {
     const r = calcularStatusContrato([pasta(
-      arq('CONTRATO DE SERVIÇOS 2025.pdf', { modificadoEm: new Date('2026-09-01T10:00:00Z'), pdfAssinado: true }),
+      arq('CONTRATO DE SERVIÇOS 2025.pdf', { modificadoEm: new Date('2026-09-01T10:00:00Z') }),
       arq('CONTRATO DE SERVIÇOS 2026.pdf', { modificadoEm: new Date('2026-10-01T10:00:00Z') }),
     )]);
     expect(r).toMatchObject({ status: 'REVISAR', motivo: 'MULTIPLOS_CONTRATOS_ATUAIS', contratoPrincipal: null });
+  });
+
+  it('múltiplos grupos ficam assinados quando um contrato atual está assinado', () => {
+    const r = calcularStatusContrato([pasta(
+      arq('Contrato de Prestação de Serviços.docx'),
+      arq('EMPRESA - Contrato de Serviços - Assinado.pdf'),
+    )]);
+    expect(r).toMatchObject({
+      status: 'ASSINADO',
+      motivo: 'CONTRATO_ASSINADO_PELO_NOME',
+      emDia: true,
+      contratoPrincipal: { nome: 'EMPRESA - Contrato de Serviços - Assinado.pdf' },
+    });
+    expect(r.warnings[0]).toContain('identidades diferentes');
+  });
+
+  it('múltiplos grupos priorizam a evidência digital e mantêm os demais como aviso', () => {
+    const r = calcularStatusContrato([pasta(
+      arq('CONTRATO DE PRESTAÇÃO DE SERVIÇOS.docx'),
+      arq('EMPRESA - Contrato de Serviços.pdf', { pdfAssinado: true, pdfMarca: 'icp' }),
+      arq('CONTRATO DE SERVIÇOS 2025.pdf'),
+    )]);
+    expect(r).toMatchObject({
+      status: 'ASSINADO',
+      motivo: 'CONTRATO_DIGITAL_ASSINADO',
+      emDia: true,
+    });
+    expect(r.warnings[0]).toContain('identidades diferentes');
+  });
+
+  it('PDF ou imagem sem nome reconhecível na subpasta exige revisão', () => {
+    expect(calcularStatusContrato([pasta(arq('BLD - FILIAL 012.pdf'))]))
+      .toMatchObject({ status: 'REVISAR', motivo: 'ARQUIVO_NAO_IDENTIFICADO' });
+    expect(calcularStatusContrato([pasta(arq('Pagina 1 c.jpg'))]))
+      .toMatchObject({ status: 'REVISAR', motivo: 'ARQUIVO_NAO_IDENTIFICADO' });
+  });
+
+  it('PDF grande ou não lido exige revisão em vez de parecer sem assinatura', () => {
+    expect(calcularStatusContrato([pasta(arq('CONTRATO DE SERVIÇOS.pdf', { pdfAssinado: null }))]))
+      .toMatchObject({ status: 'REVISAR', motivo: 'PDF_NAO_ANALISADO' });
   });
 
   it('no mesmo contrato, assinatura vence formato e a data só desempata evidência equivalente', () => {

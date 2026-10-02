@@ -1,8 +1,8 @@
 // Auditoria Contratos (Fase 2B) — status puro por empresa.
 //
-// Decisões de 01/10/2026:
+// Decisões consolidadas até 02/10/2026:
 // - estados simples para operação, com motivos diagnósticos separados;
-// - "assinado" no nome sem assinatura digital exige revisão física manual;
+// - "assinado" no nome conta como assinado, com motivo próprio para filtro;
 // - data de modificação só desempata versões do mesmo contrato lógico;
 // - grupos lógicos diferentes nunca são escolhidos automaticamente pela data.
 
@@ -27,8 +27,9 @@ export type MotivoStatusContrato =
   | 'SEM_CONTRATO_SERVICO'
   | 'MULTIPLOS_CONTRATOS_ATUAIS'
   | 'SOMENTE_CONTRATO_ANTIGO'
-  | 'POSSIVEL_ASSINATURA_FISICA'
-  | 'EVIDENCIA_CONTRADITORIA'
+  | 'CONTRATO_ASSINADO_PELO_NOME'
+  | 'ARQUIVO_NAO_IDENTIFICADO'
+  | 'PDF_NAO_ANALISADO'
   | 'FORMATO_EXIGE_REVISAO'
   | 'CONTRATO_DIGITAL_ASSINADO'
   | 'PDF_SEM_ASSINATURA'
@@ -113,6 +114,38 @@ function principalDoGrupo(grupo: GrupoContrato): ContratoClassificado {
   )[0];
 }
 
+function assinaturaDe(a: ContratoClassificado): 'digital' | 'nome' | null {
+  if (a.classificacao.assinatura.digital) return 'digital';
+  if (a.classificacao.assinatura.peloNome) return 'nome';
+  return null;
+}
+
+function resultadoAssinado(
+  grupos: GrupoContrato[],
+  comum: Pick<ResultadoStatusContrato, 'contratos' | 'descartados' | 'gruposAtuais' | 'gruposAntigos'>,
+  warnings: string[] = [],
+): ResultadoStatusContrato | null {
+  const gruposAssinados = grupos.filter((grupo) => grupo.arquivos.some((a) => assinaturaDe(a)));
+  if (!gruposAssinados.length) return null;
+
+  const temDigital = gruposAssinados.some((grupo) =>
+    grupo.arquivos.some((a) => a.classificacao.assinatura.digital));
+  // Só há seleção inequívoca quando a evidência assinada pertence a um único grupo.
+  const contratoPrincipal = gruposAssinados.length === 1 ? principalDoGrupo(gruposAssinados[0]) : null;
+  const contraditoria = gruposAssinados.some((grupo) =>
+    grupo.arquivos.some((a) => a.classificacao.assinatura.contraditoria));
+
+  return base('ASSINADO', temDigital ? 'CONTRATO_DIGITAL_ASSINADO' : 'CONTRATO_ASSINADO_PELO_NOME', {
+    ...comum,
+    contratoPrincipal,
+    warnings: [
+      ...warnings,
+      ...(contraditoria ? ['Há assinatura digital, mas o nome também declara ausência de assinatura.'] : []),
+      ...(!temDigital ? ['Assinatura aceita pela indicação no nome; não foi encontrada assinatura digital.'] : []),
+    ],
+  });
+}
+
 export function calcularStatusContrato(pastas: PastaParaStatusContrato[]): ResultadoStatusContrato {
   if (pastas.length === 0) return base('NAO_LOCALIZADO', 'SEM_VINCULO');
   if (!pastas.some((p) => p.subpastasContrato.length > 0)) {
@@ -128,7 +161,19 @@ export function calcularStatusContrato(pastas: PastaParaStatusContrato[]): Resul
   );
   const contratos = classificados.filter((a) => a.classificacao.ehContratoServico);
   const descartados = classificados.filter((a) => !a.classificacao.ehContratoServico);
-  if (!contratos.length) return base('NAO_LOCALIZADO', 'SEM_CONTRATO_SERVICO', { contratos, descartados });
+  if (!contratos.length) {
+    const naoIdentificados = descartados.filter((a) =>
+      a.classificacao.motivoExclusao === 'nao_parece_contrato' &&
+      (a.classificacao.formato === 'pdf' || a.classificacao.formato === 'imagem'));
+    if (naoIdentificados.length) {
+      return base('REVISAR', 'ARQUIVO_NAO_IDENTIFICADO', {
+        contratos,
+        descartados,
+        warnings: ['Há PDF ou imagem na subpasta de contrato cujo nome não permite classificação automática.'],
+      });
+    }
+    return base('NAO_LOCALIZADO', 'SEM_CONTRATO_SERVICO', { contratos, descartados });
+  }
 
   const grupos = agrupar(contratos);
   const gruposAtuais = grupos.filter((g) => !g.antigo);
@@ -136,6 +181,10 @@ export function calcularStatusContrato(pastas: PastaParaStatusContrato[]): Resul
   const comum = { contratos, descartados, gruposAtuais, gruposAntigos };
 
   if (gruposAtuais.length > 1) {
+    const assinado = resultadoAssinado(gruposAtuais, comum, [
+      'Há contratos com identidades diferentes; os demais arquivos devem ser conferidos.',
+    ]);
+    if (assinado) return assinado;
     return base('REVISAR', 'MULTIPLOS_CONTRATOS_ATUAIS', {
       ...comum,
       warnings: ['Há contratos com identidades diferentes; a data não será usada para escolher entre eles.'],
@@ -154,19 +203,12 @@ export function calcularStatusContrato(pastas: PastaParaStatusContrato[]): Resul
   const evidencias = grupo.arquivos.map((a) => a.classificacao);
   const parcial = { ...comum, contratoPrincipal: principal };
 
-  if (evidencias.some((c) => c.assinatura.contraditoria)) {
-    return base('REVISAR', 'EVIDENCIA_CONTRADITORIA', {
+  const assinado = resultadoAssinado([grupo], comum);
+  if (assinado) return assinado;
+  if (evidencias.some((c) => c.formato === 'pdf' && !c.assinatura.tecnicaLida)) {
+    return base('REVISAR', 'PDF_NAO_ANALISADO', {
       ...parcial,
-      warnings: ['Há PDF assinado digitalmente cujo nome declara ausência de assinatura.'],
-    });
-  }
-  if (evidencias.some((c) => c.assinatura.digital)) {
-    return base('ASSINADO', 'CONTRATO_DIGITAL_ASSINADO', parcial);
-  }
-  if (evidencias.some((c) => c.assinatura.peloNome)) {
-    return base('REVISAR', 'POSSIVEL_ASSINATURA_FISICA', {
-      ...parcial,
-      warnings: ['O nome indica assinatura, mas não há assinatura digital. Confira visualmente o campo de assinatura.'],
+      warnings: ['O coletor não conseguiu analisar tecnicamente ao menos um PDF.'],
     });
   }
   if (evidencias.some((c) => c.formato === 'imagem')) {
