@@ -11,14 +11,23 @@ import { exportCompaniesReport } from '../controllers/reportController';
 import {
   getResponsaveis, postResponsavel, patchResponsavelNome, removeResponsavel,
 } from '../controllers/responsaveisController';
-import auditRoutes from './audit';
+import auditRoutes, { auditRobotRoutes } from './audit';
 import auditAditivosRoutes from './auditAditivos';
 import auditContratosRoutes from './auditContratos';
+import { authPublicoRoutes, authRoutes } from './auth';
+import honorariosRoutes from './honorarios';
+import { exigirUsuario } from '../middleware/sessao';
 
 const router = Router();
 
-// ── Health ────────────────────────────────────────────────────────
+// ── Sem login ─────────────────────────────────────────────────────
 router.get('/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
+router.use('/auth', authPublicoRoutes);            // entrar e sair
+router.use('/audit/robot', auditRobotRoutes);      // robô: só o AUDIT_ROBOT_TOKEN
+
+// ── Daqui para baixo, tudo exige login (ADR-008) ──────────────────
+router.use(exigirUsuario);
+router.use('/auth', authRoutes);
 
 // ── Dashboard ─────────────────────────────────────────────────────
 router.get('/stats', getStats);
@@ -55,5 +64,8 @@ router.delete('/responsaveis/:id', removeResponsavel);
 router.use('/audit/aditivos', auditAditivosRoutes);
 router.use('/audit/contratos', auditContratosRoutes);
 router.use('/audit', auditRoutes);
+
+// ── Honorários (leitura dos documentos e envio ao Acessórias) ─────
+router.use('/honorarios', honorariosRoutes);
 
 export default router;

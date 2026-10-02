@@ -77,6 +77,24 @@ export const marcaSemPastaSchema = z.discriminatedUnion('acao', [
   z.object({ acao: z.literal('desmarcar'), companyId: z.string().uuid() }),
 ]);
 
+// ── Textos dos documentos (honorário, migration 008) ─────────────
+
+export const MAX_TEXTOS_POR_ENVIO = 200;
+/** Igual ao teto do robô (automation/auditoria/src/textos.js). */
+export const MAX_CARACTERES_TEXTO = 200_000;
+
+export const textosSchema = z.object({
+  textos: z.array(z.object({
+    chave:        z.string().regex(/^[0-9a-f]{64}$/, 'chave inválida'),
+    modificadoEm: z.string().datetime({ offset: true }),
+    tamanho:      z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    status:       z.enum(['ok', 'sem_texto', 'erro']),
+    paginas:      z.number().int().nonnegative().max(65_535).nullable().optional(),
+    texto:        z.string().max(MAX_CARACTERES_TEXTO).nullable().optional(),
+    erro:         z.string().max(1000).nullable().optional(),
+  })).min(1).max(MAX_TEXTOS_POR_ENVIO),
+});
+
 export type MarcaSemPasta = z.infer<typeof marcaSemPastaSchema>;
 export type Lote          = z.infer<typeof loteSchema>;
 export type PastaDoLote   = Lote['pastas'][number];

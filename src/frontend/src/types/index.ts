@@ -332,3 +332,111 @@ export interface AuditFiltrosContratos {
   responsavel?: string;
   busca?:       string;
 }
+
+// ── Sessão ────────────────────────────────────────────────────────
+/** Conta compartilhada do setor (Societário, Controladoria). */
+export interface UsuarioLogado {
+  id:    string;
+  login: string;
+  nome:  string;
+}
+
+// ── Honorários (leitura dos documentos e Acessórias) ──────────────
+export type SituacaoHonorario =
+  | 'MANUAL' | 'LIDO' | 'CONFERIR' | 'AGUARDANDO_LEITURA' | 'DIGITALIZADO' | 'SEM_VALOR' | 'SEM_DOCUMENTO';
+
+export type AlertaHonorario =
+  | 'minuta' | 'sem_assinatura' | 'mencao' | 'acordo_comercial' | 'valor_condicional'
+  | 'valores_diferentes' | 'documento_mais_novo_sem_valor' | 'sem_data' | 'leitura_incompleta';
+
+export type ComparacaoAcessorias = 'NAO_CONFERIDO' | 'NAO_ENCONTRADA' | 'SEM_VALOR_NO_APP' | 'IGUAL' | 'DIFERENTE';
+
+export interface HonorarioDocumento {
+  nomePasta:       string;
+  caminhoRelativo: string;
+  nome:            string;
+  tipo:            'contrato' | 'aditivo' | 'outro';
+  data:            string | null;
+  modificadoEm:    string;
+  estado:          'ok' | 'sem_texto' | 'erro' | 'pendente' | 'imagem';
+  assinatura:      string;
+  minuta:          boolean;
+  valor:           number | null;
+  adicional:       number | null;
+  forma:           'novo_valor' | 'valor_mensal' | 'mencao' | null;
+  trecho:          string | null;
+}
+
+export interface HonorarioEmpresa {
+  empresa:    { id: string; razaoSocial: string; cnpj: string; responsavel: string | null };
+  situacao:   SituacaoHonorario;
+  alertas:    AlertaHonorario[];
+  valor:      number | null;
+  fonte:      'manual' | 'documento' | null;
+  documento:  HonorarioDocumento | null;
+  manual:     { valor: number; documento: string | null; observacao: string | null; informadoPor: string; informadoEm: string } | null;
+  documentos: HonorarioDocumento[];
+  acessorias: { comparacao: ComparacaoAcessorias; valor: number | null; identificador: string | null; situacao: string | null };
+  ultimoEnvio: { enviadoEm: string; conta: string; valorEnviado: number; status: 'ok' | 'erro'; erro: string | null } | null;
+}
+
+export interface RelatorioHonorarios {
+  job:     AuditJob | null;
+  raizUnc: string;
+  resumo: {
+    empresas:    number;
+    porSituacao: Record<SituacaoHonorario, number>;
+    comValor:    number;
+    textos:      { documentos: number; lidos: number; pendentes: number; semTexto: number };
+    acessorias:  { conferidoEm: string | null; iguais: number; diferentes: number; naoEncontradas: number };
+  };
+  empresas: HonorarioEmpresa[];
+}
+
+export interface ResultadoEnvioAcessorias {
+  companyId:     string;
+  razao:         string;
+  status:        'ok' | 'erro' | 'ignorado';
+  mensagem:      string;
+  outrosCampos?: string[];
+}
+
+export interface OperacaoAcessorias {
+  tipo:        'conferir' | 'enviar_lote';
+  conta:       string;
+  executando:  boolean;
+  iniciadaEm:  string;
+  concluidaEm: string | null;
+  total:       number | null;
+  feitos:      number;
+  erros:       number;
+  mensagem:    string | null;
+  resultados:  ResultadoEnvioAcessorias[];
+}
+
+export interface EstadoAcessorias {
+  configurado:       boolean;
+  operacao:          OperacaoAcessorias | null;
+  envioLoteLiberado: boolean;
+  bloqueio: {
+    id: string; companyId: string; razaoSocial: string; enviadoEm: string; conta: string;
+    outrosCampos: string[]; fichaAntes: Record<string, unknown> | null; fichaDepois: Record<string, unknown> | null;
+  } | null;
+}
+
+export interface EnvioAcessorias {
+  id:            string;
+  companyId:     string;
+  razaoSocial:   string;
+  cnpj:          string;
+  valorAnterior: number | null;
+  valorEnviado:  number;
+  fonte:         'documento' | 'manual';
+  conta:         string;
+  status:        'ok' | 'erro';
+  erro:          string | null;
+  outrosCampos:  string[] | null;
+  enviadoEm:     string;
+  conferidoEm:   string | null;
+  conferidoPor:  string | null;
+}

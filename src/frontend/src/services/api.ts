@@ -1,4 +1,5 @@
 import axios, { type AxiosError } from 'axios';
+import { CHAVE_SESSAO, queryClient } from './queryClient';
 import type {
   Company, Complement, GeneratedDocument,
   DashboardStats, ListResponse, PreviewResponse, CompanyStatus,
@@ -6,6 +7,8 @@ import type {
   AuditStatus, AuditJob, AuditPastasResponse, AuditAcaoVinculo, AuditAcaoSemPasta,
   AuditRelatorioAditivos, AuditFiltrosAditivos,
   AuditRelatorioContratos, AuditFiltrosContratos,
+  UsuarioLogado,
+  RelatorioHonorarios, EstadoAcessorias, OperacaoAcessorias, ResultadoEnvioAcessorias, EnvioAcessorias,
 } from '../types';
 
 const http = axios.create({
@@ -15,27 +18,57 @@ const http = axios.create({
   timeout: 60_000,
 });
 
+/** Erro da API com o status HTTP (401 = sessão terminou). */
+export class ErroApi extends Error {
+  constructor(message: string, public readonly status?: number) {
+    super(message);
+    this.name = 'ErroApi';
+  }
+}
+
 // Extrai a mensagem real do JSON de erro, mesmo quando responseType é 'blob'
 http.interceptors.response.use(
   (r) => r,
   async (err: AxiosError) => {
-    const data = err.response?.data;
+    const data   = err.response?.data;
+    const status = err.response?.status;
+
+    // Sessão terminou no meio do uso: volta para a tela de login.
+    if (status === 401 && !err.config?.url?.startsWith('/auth/')) {
+      queryClient.setQueryData(CHAVE_SESSAO, null);
+    }
 
     // Quando responseType='blob', erros chegam como Blob — precisa ler como texto
     if (data instanceof Blob && data.type.includes('json')) {
       try {
         const text = await data.text();
         const json = JSON.parse(text) as { error?: string };
-        return Promise.reject(new Error(json.error ?? err.message));
+        return Promise.reject(new ErroApi(json.error ?? err.message, status));
       } catch {
-        return Promise.reject(new Error(err.message));
+        return Promise.reject(new ErroApi(err.message, status));
       }
     }
 
     const apiError = (data as { error?: string } | undefined)?.error;
-    return Promise.reject(new Error(apiError ?? err.message));
+    return Promise.reject(new ErroApi(apiError ?? err.message, status));
   },
 );
+
+// ── Sessão ──────────────────────────────────────────────────────
+/** Conta logada, ou null se não há sessão. */
+export async function getSessao(): Promise<UsuarioLogado | null> {
+  try {
+    return (await http.get<{ usuario: UsuarioLogado }>('/auth/me')).data.usuario;
+  } catch (e) {
+    if (e instanceof ErroApi && e.status === 401) return null;
+    throw e;
+  }
+}
+
+export const entrar = (login: string, senha: string) =>
+  http.post<{ usuario: UsuarioLogado }>('/auth/login', { login, senha }).then((r) => r.data.usuario);
+
+export const sair = () => http.post('/auth/logout').then(() => undefined);
 
 // ── Health ──────────────────────────────────────────────────────
 export const getHealth = () =>
@@ -210,3 +243,32 @@ export async function exportCompaniesReport(
 
   triggerBlobDownload(response.data as Blob, rawName);
 }
+
+// ── Honorários ──────────────────────────────────────────────────
+export const getHonorarios = () =>
+  http.get<RelatorioHonorarios>('/honorarios', { timeout: 120_000 }).then((r) => r.data);
+
+export const informarHonorario = (companyId: string, d: { valor: number; documento?: string; observacao?: string }) =>
+  http.put(`/honorarios/${companyId}/manual`, d).then((r) => r.data);
+
+export const removerHonorarioInformado = (companyId: string) =>
+  http.delete(`/honorarios/${companyId}/manual`).then((r) => r.data);
+
+export const getEstadoAcessorias = () =>
+  http.get<EstadoAcessorias>('/honorarios/acessorias').then((r) => r.data);
+
+export const conferirAcessorias = () =>
+  http.post<OperacaoAcessorias>('/honorarios/acessorias/conferir').then((r) => r.data);
+
+export const enviarHonorario = (companyId: string, valorEsperado: number) =>
+  http.post<ResultadoEnvioAcessorias>('/honorarios/acessorias/enviar', { companyId, valorEsperado }, { timeout: 120_000 })
+    .then((r) => r.data);
+
+export const enviarHonorariosLote = (itens: { companyId: string; valorEsperado: number }[]) =>
+  http.post<OperacaoAcessorias>('/honorarios/acessorias/enviar-lote', { itens }, { timeout: 120_000 }).then((r) => r.data);
+
+export const getEnviosAcessorias = (limite = 50) =>
+  http.get<{ data: EnvioAcessorias[] }>('/honorarios/acessorias/envios', { params: { limite } }).then((r) => r.data.data);
+
+export const liberarEnviosAcessorias = (envioId: string) =>
+  http.post(`/honorarios/acessorias/envios/${envioId}/conferido`).then((r) => r.data);
