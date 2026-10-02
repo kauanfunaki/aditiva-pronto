@@ -28,6 +28,10 @@ describe('filialDaPasta e nomeBaseDaPasta', () => {
     ['BLD LOGÍSTICA LTDA - 12 FILIAL - CURITIBA-PR',               12, 'BLD LOGISTICA'],
     ['X ONE LOGÍSTICA LTDA - 02 FILIAL - SÃO MIGUEL DO OESTE-SC',  2,  'X ONE LOGISTICA'],
     ['BLD LOGISTICA FILIAL 15',                                    15, 'BLD LOGISTICA'],
+    // Caso real de 02/10/2026: traço entre o número e FILIAL (filiais 20, 21 e 22 da BLD).
+    ['BLD LOGISTICA LTDA - 21 - FILIAL PARANAGUÁ',                 21, 'BLD LOGISTICA'],
+    ['BLD LOGISTICA LTDA - 22 - FILIAL APIAÍ-SP',                  22, 'BLD LOGISTICA'],
+    ['BLD LOGISTICA LTDA - 20 - FILIAL CURITIBA (REBOUÇAS)',       20, 'BLD LOGISTICA'],
     ['MH EXPRESS FILIAL 0002',                                     2,  'MH EXPRESS'],
     ['FLASH TRANSPORTES LTDA - MATRIZ',                            1,  'FLASH TRANSPORTES'],
     ['DANILO GABRIEL TOMBINI ENGENHARIA LTDA FILIAL',              null, 'DANILO GABRIEL TOMBINI ENGENHARIA'],
@@ -173,5 +177,23 @@ describe('pasta com razão social cortada e sigla na frente (caso real SINCOPEÇ
       'CIC TRANSPORTES RODOVIARIOS DE CARGAS LTDA', 'CIC TRANSPORTES RODOVIARIOS',
     ]));
     expect(s.nomePasta).toBe('CIC TRANSPORTES RODOVIARIOS DE CARGAS LTDA');
+  });
+});
+
+describe('filial com traço entre o número e FILIAL (caso real BLD 21 e 22, 02/10/2026)', () => {
+  const bld = indexarEmpresas([
+    { id: 'bld-01', razaoSocial: 'BLD LOGISTICA LTDA', cnpj: '17.122.471/0001-75' },
+    { id: 'bld-21', razaoSocial: 'BLD LOGISTICA LTDA', cnpj: '17.122.471/0021-19' },
+    { id: 'bld-22', razaoSocial: 'BLD LOGISTICA LTDA', cnpj: '17.122.471/0022-08' },
+  ]);
+
+  it('vincula automaticamente pela ordem do CNPJ', () => {
+    const porNome = agruparPorNome(bld);
+    expect(vinculoAutomatico('BLD LOGISTICA LTDA - 21 - FILIAL PARANAGUÁ', porNome)).toBe('bld-21');
+    expect(vinculoAutomatico('BLD LOGISTICA LTDA - 22 - FILIAL APIAÍ-SP', porNome)).toBe('bld-22');
+  });
+
+  it('e a filial certa vem primeiro na sugestão', () => {
+    expect(sugerirEmpresas('BLD LOGISTICA LTDA - 22 - FILIAL APIAÍ-SP', bld)[0]).toMatchObject({ id: 'bld-22', filialConfere: true });
   });
 });
