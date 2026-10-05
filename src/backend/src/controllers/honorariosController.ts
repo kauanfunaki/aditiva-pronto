@@ -26,6 +26,11 @@ const manualSchema = z.object({
   observacao: z.string().trim().max(300).optional().transform((s) => s || null),
 });
 
+const acessoriasCertoSchema = z.object({
+  valorEsperado: valorEmReais,
+  observacao:    z.string().trim().max(300).optional().transform((s) => s || null),
+});
+
 const envioSchema = z.object({
   companyId:     idEmpresa,
   valorEsperado: valorEmReais,
@@ -48,6 +53,15 @@ export async function putManual(req: Request, res: Response, next: NextFunction)
     const companyId = validar(idEmpresa, req.params.companyId);
     await honorarios.informarValor(conta(req), { companyId, ...validar(manualSchema, req.body) });
     res.json({ message: 'Valor informado.' });
+  } catch (err) { next(err); }
+}
+
+// POST /api/honorarios/:companyId/acessorias-certo — o valor do Acessórias vale, a leitura da pasta não
+export async function postAcessoriasCerto(req: Request, res: Response, next: NextFunction) {
+  try {
+    const companyId = validar(idEmpresa, req.params.companyId);
+    const valor = await honorarios.confirmarAcessorias(conta(req), { companyId, ...validar(acessoriasCertoSchema, req.body) });
+    res.json({ message: 'Valor do Acessórias confirmado.', valor });
   } catch (err) { next(err); }
 }
 

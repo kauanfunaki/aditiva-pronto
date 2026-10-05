@@ -370,7 +370,8 @@ export type SituacaoHonorario =
 
 export type AlertaHonorario =
   | 'minuta' | 'sem_assinatura' | 'mencao' | 'acordo_comercial' | 'valor_condicional'
-  | 'valores_diferentes' | 'documento_mais_novo_sem_valor' | 'sem_data' | 'leitura_incompleta';
+  | 'valores_diferentes' | 'documento_mais_novo_sem_valor' | 'sem_data' | 'leitura_incompleta'
+  | 'documento_sem_cnpj' | 'cnpj_diferente' | 'mais_recente_digitalizado' | 'documento_depois_do_informado';
 
 export type ComparacaoAcessorias = 'NAO_CONFERIDO' | 'NAO_ENCONTRADA' | 'SEM_VALOR_NO_APP' | 'IGUAL' | 'DIFERENTE';
 
@@ -397,7 +398,13 @@ export interface HonorarioEmpresa {
   valor:      number | null;
   fonte:      'manual' | 'documento' | null;
   documento:  HonorarioDocumento | null;
-  manual:     { valor: number; documento: string | null; observacao: string | null; informadoPor: string; informadoEm: string } | null;
+  /** Foto ou PDF escaneado mais novo que o documento do valor: conferir o valor nele. */
+  fotoMaisRecente: HonorarioDocumento | null;
+  manual:     {
+    valor: number; documento: string | null; observacao: string | null; informadoPor: string; informadoEm: string;
+    /** 'acessorias' = alguém confirmou que o valor do Acessórias está certo (botão "Acessórias está certo"). */
+    origem: 'digitado' | 'acessorias';
+  } | null;
   documentos: HonorarioDocumento[];
   acessorias: { comparacao: ComparacaoAcessorias; valor: number | null; identificador: string | null; situacao: string | null };
   ultimoEnvio: { enviadoEm: string; conta: string; valorEnviado: number; status: 'ok' | 'erro'; erro: string | null } | null;

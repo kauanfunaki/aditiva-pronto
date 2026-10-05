@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import {
-  deleteManual, getEnvios, getEstadoAcessorias, getRelatorio, postConferido, postConferir,
+  deleteManual, getEnvios, getEstadoAcessorias, getRelatorio, postAcessoriasCerto, postConferido, postConferir,
   postEnviar, postEnviarLote, putManual,
 } from '../controllers/honorariosController';
 
@@ -10,6 +10,7 @@ const router = Router();
 router.get('/',                                  getRelatorio);
 router.put('/:companyId/manual',                 putManual);
 router.delete('/:companyId/manual',              deleteManual);
+router.post('/:companyId/acessorias-certo',      postAcessoriasCerto);
 
 router.get('/acessorias',                        getEstadoAcessorias);
 router.post('/acessorias/conferir',              postConferir);
