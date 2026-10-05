@@ -217,8 +217,9 @@ async function enviarLinha(l: EmpresaHonorario, conta: string, ip: string | null
   }
 
   const valorAnterior = honorarioDaFicha(antes);
+  let resposta: string;
   try {
-    await gravarEmpresa(camposDoEnvio(antes, valor));
+    resposta = await gravarEmpresa(camposDoEnvio(antes, valor));
   } catch (err) {
     const erro = `O Acessórias recusou a atualização: ${(err as Error).message}`;
     await registrar({ status: 'erro', erro, valorAnterior, fichaAntes: antes });
@@ -232,8 +233,13 @@ async function enviarLinha(l: EmpresaHonorario, conta: string, ip: string | null
     logger.warn(`[acessorias] releitura de ${cnpjDigitos} falhou: ${(err as Error).message}`);
   }
   const outrosCampos = camposAlterados(antes, depois);
+  // Se o Acessórias diz que CRIOU uma empresa, o identificador não casou com a existente:
+  // trava os envios como efeito colateral.
+  if (/criad/i.test(resposta)) outrosCampos.push(`Empresa nova criada no Acessórias (${resposta})`);
   const confirmado = depois !== null && Math.abs((honorarioDaFicha(depois) ?? -1) - valor) < 0.005;
-  const erro = confirmado ? null : 'O Acessórias não confirmou o valor novo na releitura.';
+  const erro = confirmado
+    ? null
+    : `O Acessórias respondeu "${resposta}", mas o honorário não mudou na releitura.`;
 
   await registrar({
     status: confirmado ? 'ok' : 'erro', erro, valorAnterior,

@@ -72,15 +72,35 @@ async function chamar(metodo: 'GET' | 'POST', caminho: string, corpo?: FormData)
   }
 }
 
-function mensagemDe(dados: unknown, status: number): string {
-  if (dados && typeof dados === 'object') {
-    const d = dados as Record<string, unknown>;
-    const m = d.error ?? d.erro ?? d.msg ?? d.message ?? d.mensagem;
-    if (typeof m === 'string' && m.trim()) return m.trim().slice(0, 300);
-  }
+/** Valor da primeira chave (sem diferenciar maiúscula) que casa com o padrão. */
+function campo(dados: unknown, padrao: RegExp): unknown {
+  if (!dados || typeof dados !== 'object' || Array.isArray(dados)) return undefined;
+  const achada = Object.keys(dados as object).find((k) => padrao.test(k));
+  return achada === undefined ? undefined : (dados as Record<string, unknown>)[achada];
+}
+
+const comoTexto = (v: unknown) => (typeof v === 'string' ? v : JSON.stringify(v)).trim().slice(0, 300);
+
+/**
+ * O Acessórias responde erro com HTTP 200 e `{"Erro": "…"}` no corpo (documentação da API),
+ * não com código HTTP de erro. Devolve a mensagem, ou null se não há erro.
+ */
+export function erroNoCorpo(dados: unknown): string | null {
+  const v = campo(dados, /^(erro|erros|error|errors)$/i);
+  return v === undefined || v === null || v === '' ? null : comoTexto(v);
+}
+
+export function mensagemDe(dados: unknown, status: number): string {
+  const erro = erroNoCorpo(dados);
+  if (erro) return erro;
+  const msg = campo(dados, /^(msg|message|mensagem)$/i);
+  if (msg !== undefined && msg !== null && msg !== '') return comoTexto(msg);
   if (typeof dados === 'string' && dados.trim()) return dados.trim().slice(0, 300);
   return `O Acessórias respondeu HTTP ${status}.`;
 }
+
+/** "Empresa não encontrada", "Nenhuma empresa…": fim de lista ou CNPJ que não existe lá. */
+const NAO_ENCONTRADA = /n[aã]o\s+(foi\s+)?encontrad|nenhum|inexistente|not\s+found/i;
 
 /** Ficha da empresa como o Acessórias devolve (chaves em PascalCase: Identificador, Razao, Honorario…). */
 export type FichaAcessorias = Record<string, unknown> & {
@@ -104,6 +124,11 @@ export async function buscarEmpresa(cnpjDigitos: string): Promise<FichaAcessoria
   );
   if (status === 404) return null;
   if (status >= 400) throw new ErroAcessorias(mensagemDe(dados, status), status);
+  const erro = erroNoCorpo(dados);
+  if (erro) {
+    if (NAO_ENCONTRADA.test(erro)) return null;
+    throw new ErroAcessorias(erro, status);
+  }
   if (ehFicha(dados)) return dados;
   if (Array.isArray(dados) && ehFicha(dados[0])) return dados[0];
   return null;
@@ -114,6 +139,13 @@ export async function listarPagina(pagina: number): Promise<FichaAcessorias[]> {
   const { status, dados } = await chamar('GET', `/companies/ListAll/?Pagina=${pagina}`);
   if (status === 404) return [];
   if (status >= 400) throw new ErroAcessorias(mensagemDe(dados, status), status);
+  const erro = erroNoCorpo(dados);
+  if (erro) {
+    // Fim da paginação costuma vir assim; qualquer outro erro também encerra a leitura,
+    // mas fica no log para não passar despercebido.
+    if (!NAO_ENCONTRADA.test(erro)) logger.warn(`[acessorias] ListAll página ${pagina}: ${erro}`);
+    return [];
+  }
   const lista = Array.isArray(dados)
     ? dados
     : dados && typeof dados === 'object'
@@ -122,12 +154,17 @@ export async function listarPagina(pagina: number): Promise<FichaAcessorias[]> {
   return (lista as unknown[]).filter(ehFicha);
 }
 
-/** POST /companies: cria OU atualiza pelo identificador. Só chame com empresa que já existe. */
+/**
+ * POST /companies: cria OU atualiza pelo identificador. Só chame com empresa que já existe.
+ * Devolve a mensagem do Acessórias ("Empresa 214 atualizada com sucesso!"). Erro vem como
+ * HTTP 200 com `{"Erro": "…"}` e vira exceção aqui.
+ */
 export async function gravarEmpresa(campos: Record<string, string>): Promise<string> {
   const corpo = new FormData();
   for (const [k, v] of Object.entries(campos)) corpo.append(k, v);
   const { status, dados } = await chamar('POST', '/companies', corpo);
-  if (status >= 400) throw new ErroAcessorias(mensagemDe(dados, status), status);
+  const erro = erroNoCorpo(dados);
+  if (status >= 400 || erro) throw new ErroAcessorias(erro ?? mensagemDe(dados, status), status);
   return mensagemDe(dados, status);
 }
 
