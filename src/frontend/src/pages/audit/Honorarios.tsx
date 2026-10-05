@@ -170,6 +170,9 @@ export default function Honorarios() {
   const podeEnviar = !!estado?.configurado && !travado && !operando;
   const selecionaveis = visiveis.filter(podeAtualizar);
   const selecionadasVisiveis = selecionaveis.filter((e) => selecionadas.has(e.empresa.id));
+  // "Diferente" = o Acessórias já foi conferido e o valor de lá não bate (inclui as com alerta:
+  // a confirmação do lote avisa quantas são).
+  const diferentes = selecionaveis.filter((e) => e.acessorias.comparacao === 'DIFERENTE');
 
   function alternar(conjunto: Set<string>, id: string) {
     const next = new Set(conjunto);
@@ -359,6 +362,16 @@ export default function Honorarios() {
           {/* ── Envio em lote ── */}
           {estado?.configurado && selecionaveis.length > 0 && (
             <div className="flex flex-wrap items-center gap-3 mb-3 text-sm">
+              {diferentes.length > 0 && (
+                <button
+                  type="button"
+                  className="btn-outline min-h-[40px] px-3"
+                  onClick={() => setSelecionadas(new Set(diferentes.map((e) => e.empresa.id)))}
+                  title="Todas as empresas da lista (com os filtros atuais) cujo honorário está diferente no Acessórias"
+                >
+                  Selecionar todas as diferentes ({diferentes.length})
+                </button>
+              )}
               <button
                 type="button"
                 className="btn-ghost min-h-[40px] px-3"
