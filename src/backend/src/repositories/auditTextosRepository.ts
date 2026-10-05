@@ -42,6 +42,8 @@ function colunasDaLeitura(l: LeituraDoDocumento | null) {
     l?.leitura?.forma ?? null,
     l?.leitura ? (l.leitura.condicional ? 1 : 0) : null,
     l?.leitura?.trecho ?? null,
+    // '' = lido e sem CNPJ; null = sem texto (não dá para saber)
+    l ? l.cnpjs.join(',').slice(0, 600) : null,
   ];
 }
 
@@ -55,7 +57,7 @@ export async function gravarTextos(itens: TextoParaGravar[], agora: Date): Promi
     `INSERT INTO au_textos
        (chave, nome_pasta, caminho_relativo, modificado_em, tamanho, status, paginas,
         texto, erro, extraido_em, robo_versao, leitor_versao,
-        tipo_documento, data_documento, honorario, adicional_funcionario, forma_leitura, condicional, trecho)
+        tipo_documento, data_documento, honorario, adicional_funcionario, forma_leitura, condicional, trecho, cnpjs)
      VALUES ?
      ON DUPLICATE KEY UPDATE
        nome_pasta = VALUES(nome_pasta), caminho_relativo = VALUES(caminho_relativo),
@@ -65,7 +67,7 @@ export async function gravarTextos(itens: TextoParaGravar[], agora: Date): Promi
        leitor_versao = VALUES(leitor_versao), tipo_documento = VALUES(tipo_documento),
        data_documento = VALUES(data_documento), honorario = VALUES(honorario),
        adicional_funcionario = VALUES(adicional_funcionario), forma_leitura = VALUES(forma_leitura),
-       condicional = VALUES(condicional), trecho = VALUES(trecho)`,
+       condicional = VALUES(condicional), trecho = VALUES(trecho), cnpjs = VALUES(cnpjs)`,
     [valores],
   );
 }
@@ -83,6 +85,7 @@ export interface LeituraRow extends RowDataPacket {
   forma_leitura:         string | null;
   condicional:           number | null;
   trecho:                string | null;
+  cnpjs:                 string | null;
 }
 
 /** Leituras sem o texto (o relatório não precisa dele). */
@@ -90,7 +93,7 @@ export async function listarLeituras(): Promise<LeituraRow[]> {
   const [rows] = await getPool().query<LeituraRow[]>(
     `SELECT chave, modificado_em, tamanho, status, erro, tipo_documento,
             DATE_FORMAT(data_documento, '%Y-%m-%d') AS data_documento,
-            honorario, adicional_funcionario, forma_leitura, condicional, trecho
+            honorario, adicional_funcionario, forma_leitura, condicional, trecho, cnpjs
      FROM au_textos`,
   );
   return rows;
@@ -115,7 +118,7 @@ export async function listarTextosDesatualizados(versao: number, limite: number)
 export async function atualizarLeitura(chave: string, leitura: LeituraDoDocumento | null, versao: number): Promise<void> {
   await getPool().query(
     `UPDATE au_textos SET leitor_versao = ?, tipo_documento = ?, data_documento = ?, honorario = ?,
-       adicional_funcionario = ?, forma_leitura = ?, condicional = ?, trecho = ?
+       adicional_funcionario = ?, forma_leitura = ?, condicional = ?, trecho = ?, cnpjs = ?
      WHERE chave = ?`,
     [versao, ...colunasDaLeitura(leitura), chave],
   );

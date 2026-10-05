@@ -10,7 +10,10 @@
 //
 // Mudou a regra? Suba LEITOR_VERSAO: o app relê os textos guardados sem ir à rede.
 
-export const LEITOR_VERSAO = 1;  // subir quando mudar qualquer regra abaixo
+// v2 (05/10/2026): ignora valor em cláusula condicional ("caso o faturamento ultrapasse…
+// serão reajustados para R$ X"), lê "permanecem no valor de R$ X", lê "reduzidos de R$ X para
+// R$ Y" (vale o Y) e guarda os CNPJs citados.
+export const LEITOR_VERSAO = 2;  // subir quando mudar qualquer regra abaixo
 
 export type FormaLeitura = 'novo_valor' | 'valor_mensal' | 'mencao';
 export type TipoDocumento = 'contrato' | 'aditivo' | 'outro';
@@ -80,15 +83,31 @@ const VALOR_MAXIMO = 1_000_000;
 // "honor.rio" e "funcion.rio": o "á" pode vir trocado mesmo depois do conserto.
 const HONORARIO = String.raw`honor.rios?`;
 
+// "reajustados", "reduzidos", "majorados"… e o que pode vir entre o "para" e o R$.
+const MUDOU = String.raw`(?:reajustad|alterad|atualizad|reduzid|majorad|aumentad|corrigid)[oa]s?`;
+const NOVO_VALOR = String.raw`(?:o\s+)?(?:(?:novo\s+)?valor(?:-base|\s+base)?\s+)?(?:mensal\s+)?(?:de\s+)?`;
+
 const PADROES: { forma: FormaLeitura; re: RegExp }[] = [
   // Aditivo de honorário: o valor NOVO vem depois de "passa a ser".
   {
     forma: 'novo_valor',
     re: new RegExp(String.raw`passa(?:m|r.|r.o|ndo)?\s+a\s+(?:ser|vigorar|custar)\s+(?:de\s+|no\s+valor\s+de\s+|em\s+)?${MOEDA}${NUMERO}`, 'i'),
   },
+  // "ficam reduzidos de R$ 810,50 (…) para o valor-base mensal de R$ 135,08": o valor NOVO é
+  // o que vem depois do "para" (caso real MDH COMÉRCIO DE FERRO AÇO, 01/09/2026).
   {
     forma: 'novo_valor',
-    re: new RegExp(String.raw`(?:reajustad[oa]s?|alterad[oa]s?|atualizad[oa]s?)\s+para\s+(?:o\s+valor\s+de\s+)?${MOEDA}${NUMERO}`, 'i'),
+    re: new RegExp(String.raw`(?:passa(?:m|r.|r.o)?|${MUDOU})\s+de\s+${MOEDA}[\d.,]+[^.;]{0,160}?\bpara\s+${NOVO_VALOR}${MOEDA}${NUMERO}`, 'i'),
+  },
+  {
+    forma: 'novo_valor',
+    re: new RegExp(String.raw`${MUDOU}\s+para\s+${NOVO_VALOR}${MOEDA}${NUMERO}`, 'i'),
+  },
+  // Aditivo que mantém o valor: "Os honorários mensais atualmente praticados permanecem no
+  // valor de R$ 810,50" (caso real CICERO A. LOPES, 25/06/2026).
+  {
+    forma: 'valor_mensal',
+    re: new RegExp(String.raw`${HONORARIO}[^.;]{0,80}?permanece(?:m|r.o)?\s+(?:no\s+valor\s+de\s+|em\s+|de\s+)${MOEDA}${NUMERO}`, 'i'),
   },
   // Contrato (e aditivo antigo que refaz a cláusula): "honorários mensais no valor de R$".
   {
@@ -124,27 +143,73 @@ function trechoAoRedor(corrido: string, inicio: number, fim: number): string {
   return `${de > 0 ? '…' : ''}${corrido.slice(de, ate).trim()}${ate < corrido.length ? '…' : ''}`.slice(0, 600);
 }
 
+/**
+ * O valor está numa cláusula condicional? Olha a frase até o valor: "Contudo, caso o
+ * faturamento bruto mensal ultrapasse R$ 150.000,00, os honorários serão reajustados para
+ * R$ 1.621,00" → sim. Esse valor só vale se a condição acontecer: não é o honorário atual.
+ */
+const CLAUSULA_CONDICIONAL = /\b(?:caso|se|na\s+hip.tese|enquanto|quando)\b[^.;]*\bfaturamento\b|\bfaturamento\b[^.;]*(?:ultrapass|exced|superior)/i;
+
+export function emClausulaCondicional(corrido: string, posicao: number): boolean {
+  const inicioDaFrase = Math.max(
+    corrido.lastIndexOf('. ', posicao),
+    corrido.lastIndexOf('; ', posicao),
+    corrido.lastIndexOf(': ', posicao),
+  );
+  return CLAUSULA_CONDICIONAL.test(corrido.slice(inicioDaFrase + 1, posicao));
+}
+
+/** Todas as ocorrências do padrão, em ordem. */
+function* ocorrencias(re: RegExp, texto: string): Generator<RegExpExecArray> {
+  const global = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`);
+  for (let m = global.exec(texto); m; m = global.exec(texto)) yield m;
+}
+
 export function lerHonorario(texto: string): LeituraHonorario | null {
   const corrido = textoCorrido(texto);
   const emBranco = VALOR_EM_BRANCO.test(corrido);
   for (const { forma, re } of PADROES) {
     // Modelo sem valor preenchido: qualquer "R$" que sobrar é da tabela de faixas, não o honorário.
     if (emBranco && forma !== 'novo_valor') return null;
-    const m = re.exec(corrido);
-    if (!m) continue;
-    const valor = paraNumero(m[1]);
-    if (!(valor >= 10 && valor < VALOR_MAXIMO)) continue;
-    const adicional = ADICIONAL.exec(corrido);
-    const valorAdicional = adicional ? paraNumero(adicional[1]) : null;
-    return {
-      valor,
-      adicionalPorFuncionario: valorAdicional && valorAdicional > 0 && valorAdicional < valor * 10 ? valorAdicional : null,
-      forma,
-      condicional: CONDICIONAL.test(corrido),
-      trecho: trechoAoRedor(corrido, m.index, m.index + m[0].length),
-    };
+    for (const m of ocorrencias(re, corrido)) {
+      if (emClausulaCondicional(corrido, m.index)) continue;
+      const valor = paraNumero(m[1]);
+      if (!(valor >= 10 && valor < VALOR_MAXIMO)) continue;
+      return montarLeitura(corrido, m, valor, forma);
+    }
   }
   return null;
+}
+
+function montarLeitura(corrido: string, m: RegExpExecArray, valor: number, forma: FormaLeitura): LeituraHonorario {
+  const adicional = ADICIONAL.exec(corrido);
+  const valorAdicional = adicional ? paraNumero(adicional[1]) : null;
+  return {
+    valor,
+    adicionalPorFuncionario: valorAdicional && valorAdicional > 0 && valorAdicional < valor * 10 ? valorAdicional : null,
+    forma,
+    condicional: CONDICIONAL.test(corrido),
+    trecho: trechoAoRedor(corrido, m.index, m.index + m[0].length),
+  };
+}
+
+/** CNPJ da 041 Contabilidade (a CONTRATADA): aparece em todo contrato, não identifica o cliente. */
+const RAIZ_DA_41 = '31052957';
+
+/**
+ * CNPJs citados no documento (só dígitos), sem o da 041. Serve para preferir o contrato da
+ * própria empresa numa pasta de grupo (caso real CECATTO e E R N PEREIRA).
+ * Só conta CNPJ com pontuação logo depois da palavra "CNPJ" ("inscrita no CNPJ sob o nº …"):
+ * o bloco de assinatura digital traz o CNPJ da certificadora e números soltos que parecem CNPJ.
+ */
+export function cnpjsDoTexto(texto: string): string[] {
+  const achados = new Set<string>();
+  const corrido = texto.replace(/\s+/g, ' ');
+  for (const m of corrido.matchAll(/CNPJ[^0-9]{0,60}?(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/gi)) {
+    const d = m[1].replace(/\D/g, '');
+    if (!d.startsWith(RAIZ_DA_41)) achados.add(d);
+  }
+  return [...achados];
 }
 
 const MESES: Record<string, number> = {
@@ -191,6 +256,8 @@ export interface LeituraDoDocumento {
   tipo:     TipoDocumento;
   data:     string | null;
   leitura:  LeituraHonorario | null;
+  /** CNPJs citados (só dígitos, sem o da 041). Vazio = documento sem CNPJ legível. */
+  cnpjs:    string[];
 }
 
 export function lerDocumento(texto: string, nomeArquivo: string, agora = new Date()): LeituraDoDocumento {
@@ -198,5 +265,6 @@ export function lerDocumento(texto: string, nomeArquivo: string, agora = new Dat
     tipo:    tipoDoDocumento(texto, nomeArquivo),
     data:    dataDoDocumento(texto, agora),
     leitura: lerHonorario(texto),
+    cnpjs:   cnpjsDoTexto(texto),
   };
 }

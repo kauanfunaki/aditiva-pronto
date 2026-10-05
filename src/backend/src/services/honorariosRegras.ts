@@ -26,8 +26,12 @@ export type AlertaHonorario =
   | 'acordo_comercial'              // valor de documento que não é contrato nem aditivo
   | 'valor_condicional'             // valor amarrado a faixa de faturamento
   | 'valores_diferentes'            // documentos da mesma data com valores diferentes
-  | 'documento_mais_novo_sem_valor' // há contrato/aditivo de honorário mais novo sem valor lido
+  | 'documento_mais_novo_sem_valor' // há contrato/aditivo de honorário mais novo, com texto, sem valor lido
+  | 'mais_recente_digitalizado'     // o contrato/aditivo mais recente é foto ou PDF escaneado (sem texto)
   | 'sem_data'                      // sem data no texto: usou a data do arquivo
+  | 'documento_sem_cnpj'            // há documento mais novo, sem CNPJ, com outro valor (pasta de grupo?)
+  | 'cnpj_diferente'                // o documento escolhido cita outro CNPJ (outra empresa? erro de digitação?)
+  | 'documento_depois_do_informado' // chegou documento com outro valor depois do valor informado à mão
   | 'leitura_incompleta';           // ainda há documento da empresa sem texto lido
 
 /**
@@ -55,11 +59,29 @@ export interface DocumentoDaEmpresa {
   forma:            FormaLeitura | null;
   condicional:      boolean;
   trecho:           string | null;
+  /** CNPJs citados no texto (só dígitos, sem o da 041). null = sem texto; [] = texto sem CNPJ. */
+  cnpjs?:           string[] | null;
+}
+
+/**
+ * De quem é o documento, pelos CNPJs do texto. Compara a raiz (8 primeiros dígitos):
+ * contrato da matriz vale para a filial e vice-versa.
+ *  - 'empresa' : cita o CNPJ desta empresa (ou de outro estabelecimento dela)
+ *  - 'outra'   : cita só CNPJ de outra empresa (ex.: outra empresa do grupo na mesma pasta)
+ *  - 'sem'     : não cita CNPJ (ou não tem texto)
+ */
+export function donoDoDocumento(d: Pick<DocumentoDaEmpresa, 'cnpjs'>, cnpjEmpresa: string | null): 'empresa' | 'outra' | 'sem' {
+  const digitos = (cnpjEmpresa ?? '').replace(/\D/g, '');
+  if (!d.cnpjs?.length || digitos.length !== 14) return 'sem';
+  const raiz = digitos.slice(0, 8);
+  return d.cnpjs.some((c) => c.startsWith(raiz)) ? 'empresa' : 'outra';
 }
 
 export interface Escolha {
   documento: DocumentoDaEmpresa | null;
   alertas:   AlertaHonorario[];
+  /** Foto/escaneado mais novo que o documento escolhido (alerta mais_recente_digitalizado). */
+  fotoMaisNova?: DocumentoDaEmpresa | null;
 }
 
 /** Data usada para ordenar: a do texto; sem ela, a do arquivo. */
@@ -71,6 +93,21 @@ const PESO_TIPO: Record<TipoDocumento, number> = { aditivo: 0, contrato: 1, outr
 const PESO_FORMA: Record<FormaLeitura, number> = { novo_valor: 0, valor_mensal: 1, mencao: 2 };
 const assinado = (d: DocumentoDaEmpresa) => d.assinatura === 'digital' || d.assinatura === 'pelo_nome';
 
+/** Foto ou PDF escaneado: o robô não tem o texto, o valor só se vê abrindo o arquivo. */
+export const digitalizado = (d: Pick<DocumentoDaEmpresa, 'estado'>) => d.estado === 'sem_texto' || d.estado === 'imagem';
+
+/** Nome sem extensão, acento, "assinado", "(1)"… para achar a versão escaneada de um Word. */
+export function nomeBase(nome: string): string {
+  return nome
+    .replace(/\.[^.]+$/, '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\b(assinad[oa]s?|digitalizad[oa]s?|escanead[oa]s?|scan(ead[oa])?|copia|final)\b/g, ' ')
+    .replace(/\(\d+\)/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 /** Mais recente primeiro; empate: aditivo > contrato, cláusula > menção, assinado > não, arquivo mais novo. */
 export function compararDocumentos(a: DocumentoDaEmpresa, b: DocumentoDaEmpresa): number {
   return dataEfetiva(b).localeCompare(dataEfetiva(a))
@@ -80,15 +117,22 @@ export function compararDocumentos(a: DocumentoDaEmpresa, b: DocumentoDaEmpresa)
     || b.modificadoEm.getTime() - a.modificadoEm.getTime();
 }
 
-export function escolherHonorario(docs: DocumentoDaEmpresa[]): Escolha {
+export function escolherHonorario(docs: DocumentoDaEmpresa[], cnpjEmpresa: string | null = null): Escolha {
   const comValor = docs.filter((d) => d.valor !== null);
   if (!comValor.length) return { documento: null, alertas: [] };
 
   const alertas = new Set<AlertaHonorario>();
 
+  // Se há documento que cita o CNPJ da empresa, só esses valem: os de outro CNPJ ou sem CNPJ
+  // podem ser de outra empresa do grupo ("EMPRESA NOVA - FULANO"). Sem nenhum documento com
+  // o CNPJ dela, vale a regra de sempre, mas com alerta se o escolhido cita outro CNPJ: pode
+  // ser outra empresa ou erro de digitação no contrato (casos reais DZ PLUS, X ONE EXPRESS).
+  const daEmpresa = comValor.filter((d) => donoDoDocumento(d, cnpjEmpresa) === 'empresa');
+  const base = daEmpresa.length ? daEmpresa : comValor;
+
   // Contrato ou aditivo, com o valor na cláusula. Acordo comercial e menção solta só se não houver outro.
-  let candidatos = comValor.filter((d) => d.tipo !== 'outro' && d.forma !== 'mencao');
-  if (!candidatos.length) candidatos = comValor;
+  let candidatos = base.filter((d) => d.tipo !== 'outro' && d.forma !== 'mencao');
+  if (!candidatos.length) candidatos = base;
 
   const semMinuta = candidatos.filter((d) => !d.minuta);
   if (semMinuta.length) candidatos = semMinuta;
@@ -107,28 +151,59 @@ export function escolherHonorario(docs: DocumentoDaEmpresa[]): Escolha {
     alertas.add('valores_diferentes');
   }
 
-  // Contrato (ou aditivo de honorário) mais novo que o escolhido, sem valor lido:
-  // pode ser o contrato novo digitalizado. O aditivo anual sem valor (responsável
-  // técnico, 13º) não conta.
+  // Contrato (ou aditivo de honorário) mais novo que o escolhido, sem valor lido. O aditivo
+  // anual sem valor (responsável técnico, 13º) não conta.
   const maisNovoSemValor = docs.some((d) =>
-    d.valor === null && !d.minuta
+    d.valor === null && !d.minuta && !digitalizado(d)
     && (d.tipo === 'contrato' || /honor/i.test(d.nome))
     && dataEfetiva(d) > dataEfetiva(escolhido));
   if (maisNovoSemValor) alertas.add('documento_mais_novo_sem_valor');
 
-  return { documento: escolhido, alertas: [...alertas] };
+  // Foto ou PDF escaneado mais novo que o escolhido: o valor dele pode ser outro e o robô não
+  // tem como ler (caso real BIOOSCARE, 05/10/2026: contrato assinado fotografado, com valor
+  // menor). Não conta a versão escaneada de um documento lido ("X.docx" e "X assinado.pdf").
+  const lidos = new Set(docs.filter((d) => d.estado === 'ok').map((d) => nomeBase(d.nome)));
+  const fotoMaisNova = docs
+    .filter((d) =>
+      digitalizado(d) && !d.minuta && d.tipo !== 'outro'
+      && dataEfetiva(d) > dataEfetiva(escolhido)
+      && !lidos.has(nomeBase(d.nome)))
+    .sort(compararDocumentos)[0] ?? null;
+  if (fotoMaisNova) alertas.add('mais_recente_digitalizado');
+
+  if (donoDoDocumento(escolhido, cnpjEmpresa) === 'outra') alertas.add('cnpj_diferente');
+
+  if (daEmpresa.length) {
+    const semCnpjMaisNovo = comValor.some((d) =>
+      donoDoDocumento(d, cnpjEmpresa) === 'sem' && d.tipo !== 'outro' && d.forma !== 'mencao'
+      && dataEfetiva(d) > dataEfetiva(escolhido)
+      && Math.abs((d.valor ?? 0) - (escolhido.valor ?? 0)) >= 0.005);
+    if (semCnpjMaisNovo) alertas.add('documento_sem_cnpj');
+  }
+
+  return { documento: escolhido, alertas: [...alertas], fotoMaisNova };
 }
 
 export function situacaoDoHonorario(
   docs: DocumentoDaEmpresa[],
   escolha: Escolha,
-  temManual: boolean,
+  manual: { valor: number; informadoEm: Date } | null,
 ): { situacao: SituacaoHonorario; alertas: AlertaHonorario[] } {
+  // Valor informado à mão (digitado ou "Acessórias está certo"): uma pessoa já decidiu, os
+  // alertas da leitura não contam. Só avisa se chegou documento com outro valor DEPOIS
+  // disso (ex.: aditivo de honorário do ano seguinte), pela data do arquivo na pasta.
+  if (manual) {
+    const novo = docs.some((d) =>
+      d.valor !== null && !d.minuta && d.tipo !== 'outro'
+      && d.modificadoEm.getTime() > manual.informadoEm.getTime()
+      && Math.abs(d.valor - manual.valor) >= 0.005);
+    return { situacao: 'MANUAL', alertas: novo ? ['documento_depois_do_informado'] : [] };
+  }
+
   const alertas = [...escolha.alertas];
   const pendentes = docs.some((d) => d.estado === 'pendente');
   if (escolha.documento && pendentes) alertas.push('leitura_incompleta');
 
-  if (temManual) return { situacao: 'MANUAL', alertas };
   if (escolha.documento) {
     const conferir = alertas.some((a) => !ALERTAS_INFORMATIVOS.has(a));
     return { situacao: conferir ? 'CONFERIR' : 'LIDO', alertas };

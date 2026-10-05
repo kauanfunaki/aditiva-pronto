@@ -251,6 +251,10 @@ export const getHonorarios = () =>
 export const informarHonorario = (companyId: string, d: { valor: number; documento?: string; observacao?: string }) =>
   http.put(`/honorarios/${companyId}/manual`, d).then((r) => r.data);
 
+/** "Acessórias está certo": o valor do Acessórias passa a valer e a leitura da pasta fica de lado. */
+export const confirmarAcessoriasCerto = (companyId: string, d: { valorEsperado: number; observacao?: string }) =>
+  http.post<{ message: string; valor: number }>(`/honorarios/${companyId}/acessorias-certo`, d).then((r) => r.data);
+
 export const removerHonorarioInformado = (companyId: string) =>
   http.delete(`/honorarios/${companyId}/manual`).then((r) => r.data);
 

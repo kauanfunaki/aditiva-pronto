@@ -7,31 +7,35 @@ import { getPool } from '../database/connection';
 
 // ── Valor informado à mão ─────────────────────────────────────────
 
+export type OrigemManual = 'digitado' | 'acessorias';
+
 export interface ManualRow extends RowDataPacket {
   company_id:    string;
   valor:         string;
   documento:     string | null;
   observacao:    string | null;
+  origem:        OrigemManual;
   informado_por: string;
   informado_em:  Date;
 }
 
 export async function listarManuais(): Promise<ManualRow[]> {
   const [rows] = await getPool().query<ManualRow[]>(
-    `SELECT company_id, valor, documento, observacao, informado_por, informado_em FROM au_honorarios_manuais`,
+    `SELECT company_id, valor, documento, observacao, origem, informado_por, informado_em FROM au_honorarios_manuais`,
   );
   return rows;
 }
 
 export async function gravarManual(d: {
-  companyId: string; valor: number; documento: string | null; observacao: string | null; conta: string; agora: Date;
+  companyId: string; valor: number; documento: string | null; observacao: string | null; origem: OrigemManual;
+  conta: string; agora: Date;
 }): Promise<void> {
   await getPool().query(
-    `INSERT INTO au_honorarios_manuais (company_id, valor, documento, observacao, informado_por, informado_em)
-     VALUES (?, ?, ?, ?, ?, ?)
+    `INSERT INTO au_honorarios_manuais (company_id, valor, documento, observacao, origem, informado_por, informado_em)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE valor = VALUES(valor), documento = VALUES(documento), observacao = VALUES(observacao),
-       informado_por = VALUES(informado_por), informado_em = VALUES(informado_em)`,
-    [d.companyId, d.valor.toFixed(2), d.documento, d.observacao, d.conta, d.agora],
+       origem = VALUES(origem), informado_por = VALUES(informado_por), informado_em = VALUES(informado_em)`,
+    [d.companyId, d.valor.toFixed(2), d.documento, d.observacao, d.origem, d.conta, d.agora],
   );
 }
 
@@ -45,6 +49,15 @@ export async function empresaAtiva(companyId: string): Promise<boolean> {
     [companyId],
   );
   return rows.length > 0;
+}
+
+/** CNPJ da empresa ativa; null se não existe ou está inativa. */
+export async function cnpjDaEmpresaAtiva(companyId: string): Promise<string | null> {
+  const [rows] = await getPool().query<RowDataPacket[]>(
+    `SELECT cnpj FROM companies WHERE id = ? AND inativo = 0 LIMIT 1`,
+    [companyId],
+  );
+  return rows.length ? String(rows[0].cnpj) : null;
 }
 
 // ── Leitura do Acessórias ─────────────────────────────────────────
@@ -66,6 +79,15 @@ export interface AcessoriasEmpresa {
   razao:         string | null;
   situacao:      string | null;
   honorario:     number | null;
+}
+
+export async function acessoriasDoCnpj(cnpjDigitos: string): Promise<AcessoriasEmpresaRow | null> {
+  const [rows] = await getPool().query<AcessoriasEmpresaRow[]>(
+    `SELECT cnpj_digitos, identificador, acessorias_id, razao, situacao, honorario, lido_em
+     FROM au_acessorias_empresas WHERE cnpj_digitos = ? LIMIT 1`,
+    [cnpjDigitos],
+  );
+  return rows[0] ?? null;
 }
 
 export async function listarAcessorias(): Promise<AcessoriasEmpresaRow[]> {

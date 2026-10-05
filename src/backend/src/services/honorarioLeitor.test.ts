@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  consertarAcentos, dataDoDocumento, lerDocumento, lerHonorario, paraNumero, tipoDoDocumento,
+  cnpjsDoTexto, consertarAcentos, dataDoDocumento, emClausulaCondicional, lerDocumento, lerHonorario, paraNumero,
+  tipoDoDocumento,
 } from './honorarioLeitor';
 
 // Trechos tirados dos documentos reais da rede (02/10/2026), com nomes trocados.
@@ -145,5 +146,67 @@ describe('lerDocumento', () => {
   it('junta tipo, data e leitura', () => {
     const r = lerDocumento(ADITIVO_NOVO_VALOR, 'X - Termo Aditivo Honorario.pdf');
     expect(r).toMatchObject({ tipo: 'aditivo', data: '2026-04-09', leitura: { valor: 1199.14 } });
+  });
+});
+
+describe('leitor v2: cláusula condicional (caso real CICERO A. LOPES, 05/10/2026)', () => {
+  const ADITIVO_CICERO = `TERMO ADITIVO AO CONTRATO DE PRESTAÇÃO DE SERVIÇOS
+CLÁUSULA PRIMEIRA: PARÁGRAFO ÚNICO: Fica ajustado entre as partes o pagamento referente à regularização dos
+serviços contábeis retroativos, no valor total de R$ 3.990,00 (três mil novecentos e noventa reais). Os honorários
+mensais atualmente praticados permanecem no valor de R$ 810,50 (oitocentos e dez reais e cinquenta centavos).
+Contudo, caso o faturamento bruto mensal da CONTRATANTE ultrapasse o montante de R$ 150.000,00, os honorários
+mensais serão automaticamente reajustados para R$ 1.621,00 (mil seiscentos e vinte e um reais).
+Curitiba, 25 de junho de 2026.`;
+
+  it('o valor condicional (o dobro) não é o honorário; vale o que "permanece"', () => {
+    const l = lerHonorario(ADITIVO_CICERO)!;
+    expect(l.valor).toBe(810.5);
+    expect(l.condicional).toBe(true); // a pessoa ainda confere: pode passar a valer o reajuste
+  });
+
+  it('valor novo de verdade (fora de condição) continua sendo lido', () => {
+    const t = 'O valor do honorário mensal, anteriormente fixado em R$ 810,50, passa a ser de R$ 1.621,00 a partir de maio.';
+    expect(lerHonorario(t)!.valor).toBe(1621);
+  });
+
+  it('só o reajuste condicional, sem valor-base: não lê nada', () => {
+    const t = 'Caso o faturamento mensal ultrapasse R$ 150.000,00, os honorários serão reajustados para R$ 1.621,00.';
+    expect(lerHonorario(t)).toBeNull();
+  });
+
+  it('emClausulaCondicional olha só a frase do valor', () => {
+    const t = 'O faturamento foi informado. Os honorários passam a ser de R$ 900,00.';
+    expect(emClausulaCondicional(t, t.indexOf('passam'))).toBe(false);
+  });
+});
+
+describe('leitor v2: "de R$ X para R$ Y" (caso real MDH COMÉRCIO DE FERRO AÇO, 01/09/2026)', () => {
+  it('honorário reduzido: vale o valor depois do "para"', () => {
+    const t = `CLÁUSULA PRIMEIRA: Em razão do acordo celebrado entre as partes, os honorários mensais pelos serviços
+contábeis prestados ficam reduzidos de R$ 810,50 (oitocentos e dez reais e cinquenta centavos) para o valor-base mensal
+de R$ 135,08 (cento e trinta e cinco reais e oito centavos), acrescido dos honorários relativos aos funcionários da
+CONTRATANTE. Essa condição terá vigência a partir de 01/09/2026. Curitiba, 01 de setembro de 2026`;
+    const l = lerHonorario(t)!;
+    expect(l.valor).toBe(135.08);
+    expect(l.forma).toBe('novo_valor');
+  });
+
+  it('outros verbos: reajustado, passa de … para', () => {
+    expect(lerHonorario('o honorário mensal fica reajustado de R$ 600,00 para R$ 690,00')!.valor).toBe(690);
+    expect(lerHonorario('os honorários passam de R$ 1.100,00 (mil e cem reais) para R$ 1.250,00')!.valor).toBe(1250);
+    expect(lerHonorario('os honorários mensais ficam majorados para o valor de R$ 980,00')!.valor).toBe(980);
+  });
+});
+
+describe('cnpjsDoTexto', () => {
+  it('pega o CNPJ depois da palavra "CNPJ" e tira o da 041', () => {
+    const t = 'CONTRATANTE: X LTDA, inscrita no CNPJ sob o nº 24.948.431/0001-42. CONTRATADA: 041 CONTABILIDADE, CNPJ 31.052.957/0001-05.';
+    expect(cnpjsDoTexto(t)).toEqual(['24948431000142']);
+    expect(cnpjsDoTexto('sem cnpj aqui')).toEqual([]);
+  });
+
+  it('ignora o CNPJ da certificadora no bloco de assinatura e números soltos (casos reais KHANT, ZANATO)', () => {
+    const t = 'Dados do certificado: C=BR,O=ICP-Brasil,OU=AC SOLUTI Multipla v5,OU=34.015.104/0001-91 Endereço de IP: 31845425616405';
+    expect(cnpjsDoTexto(t)).toEqual([]);
   });
 });

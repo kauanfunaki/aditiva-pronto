@@ -47,7 +47,13 @@ export interface EmpresaHonorario {
   valor:     number | null;
   fonte:     'manual' | 'documento' | null;
   documento: DocumentoResumo | null;
-  manual:    { valor: number; documento: string | null; observacao: string | null; informadoPor: string; informadoEm: Date } | null;
+  /** Foto ou PDF escaneado mais novo que o documento do valor: conferir o valor nele. */
+  fotoMaisRecente: DocumentoResumo | null;
+  manual:    {
+    valor: number; documento: string | null; observacao: string | null; informadoPor: string; informadoEm: Date;
+    /** 'acessorias' = alguém confirmou que o valor do Acessórias está certo e a leitura da pasta, errada. */
+    origem: repo.OrigemManual;
+  } | null;
   documentos: DocumentoResumo[];
   acessorias: {
     comparacao:    ComparacaoAcessorias;
@@ -157,6 +163,7 @@ export async function montarRelatorioHonorarios(): Promise<RelatorioHonorarios> 
           doc.forma = (l.forma_leitura as FormaLeitura | null) ?? null;
           doc.condicional = l.condicional === 1;
           doc.trecho = l.trecho;
+          doc.cnpjs = l.cnpjs === null ? null : l.cnpjs.split(',').filter(Boolean);
         }
       }
     }
@@ -185,14 +192,17 @@ export async function montarRelatorioHonorarios(): Promise<RelatorioHonorarios> 
       if (d.estado === 'sem_texto') textos.semTexto++;
     }
 
-    const escolha = escolherHonorario(docs);
+    const escolha = escolherHonorario(docs, e.cnpj);
     const m = manualPorEmpresa.get(e.id);
     const d = distratos.get(e.id) ?? null;
-    const calculada = situacaoDoHonorario(docs, escolha, !!m);
+    const calculada = situacaoDoHonorario(docs, escolha, m ? { valor: Number(m.valor), informadoEm: m.informado_em } : null);
     const situacao: SituacaoHonorario = d?.efetivo ? 'DISTRATO' : calculada.situacao;
     const alertas = d?.efetivo ? [] : calculada.alertas;
     const manual = m
-      ? { valor: Number(m.valor), documento: m.documento, observacao: m.observacao, informadoPor: m.informado_por, informadoEm: m.informado_em }
+      ? {
+        valor: Number(m.valor), documento: m.documento, observacao: m.observacao, informadoPor: m.informado_por,
+        informadoEm: m.informado_em, origem: m.origem,
+      }
       : null;
     const valor = manual?.valor ?? escolha.documento?.valor ?? null;
 
@@ -206,6 +216,7 @@ export async function montarRelatorioHonorarios(): Promise<RelatorioHonorarios> 
       valor,
       fonte:     manual ? 'manual' : escolha.documento ? 'documento' : null,
       documento: escolha.documento ? resumirDocumento(escolha.documento) : null,
+      fotoMaisRecente: !d?.efetivo && escolha.fotoMaisNova ? resumirDocumento(escolha.fotoMaisNova) : null,
       manual,
       documentos: [...docs].sort((a, b) => b.modificadoEm.getTime() - a.modificadoEm.getTime()).map(resumirDocumento),
       acessorias: {
@@ -254,7 +265,35 @@ export async function informarValor(conta: string, d: {
   companyId: string; valor: number; documento: string | null; observacao: string | null;
 }): Promise<void> {
   if (!(await repo.empresaAtiva(d.companyId))) throw new AppError(404, 'Empresa não encontrada (ou inativa).');
-  await repo.gravarManual({ ...d, conta, agora: new Date() });
+  await repo.gravarManual({ ...d, origem: 'digitado', conta, agora: new Date() });
+}
+
+/**
+ * "Acessórias está certo": o valor do Acessórias passa a valer para a empresa e a leitura da
+ * pasta fica de lado (pedido do Kauan em 05/10/2026). O valor sai da última leitura do
+ * Acessórias guardada no servidor, nunca do navegador; o valorEsperado (o que a pessoa viu na
+ * tela) só confirma que nada mudou no meio do caminho.
+ */
+export async function confirmarAcessorias(conta: string, d: {
+  companyId: string; valorEsperado: number; observacao: string | null;
+}): Promise<number> {
+  const cnpj = await repo.cnpjDaEmpresaAtiva(d.companyId);
+  if (!cnpj) throw new AppError(404, 'Empresa não encontrada (ou inativa).');
+  const ac = await repo.acessoriasDoCnpj(soDigitos(cnpj));
+  if (!ac) {
+    throw new AppError(409, 'Esta empresa não apareceu na última conferência do Acessórias. Clique em "Conferir no Acessórias" e tente de novo.');
+  }
+  const valor = numero(ac.honorario);
+  if (valor === null || valor < 10) {
+    throw new AppError(409, 'O Acessórias está sem honorário para esta empresa: não há valor para confirmar. Use "Informar valor".');
+  }
+  if (Math.abs(valor - d.valorEsperado) >= 0.005) {
+    throw new AppError(409, 'O valor do Acessórias mudou desde que a tela foi aberta. Recarregue a página e confira de novo.');
+  }
+  await repo.gravarManual({
+    companyId: d.companyId, valor, documento: null, observacao: d.observacao, origem: 'acessorias', conta, agora: new Date(),
+  });
+  return valor;
 }
 
 export async function removerValorInformado(companyId: string): Promise<void> {

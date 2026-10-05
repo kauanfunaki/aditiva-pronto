@@ -2,11 +2,11 @@ import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent } from '
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  ArrowsClockwise, CaretDown, CaretRight, CheckCircle, CloudArrowUp, FolderSimpleDashed, LockSimple,
+  ArrowsClockwise, Camera, CaretDown, CaretRight, CheckCircle, CloudArrowUp, FolderSimpleDashed, LockSimple,
   MagnifyingGlass, PencilSimple, Spinner, Trash, WarningCircle, X, XCircle,
 } from '@phosphor-icons/react';
 import {
-  conferirAcessorias, enviarHonorario, enviarHonorariosLote, getEnviosAcessorias, getEstadoAcessorias,
+  conferirAcessorias, confirmarAcessoriasCerto, enviarHonorario, enviarHonorariosLote, getEnviosAcessorias, getEstadoAcessorias,
   getHonorarios, informarHonorario, liberarEnviosAcessorias, listResponsaveis, removerHonorarioInformado,
 } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
@@ -50,14 +50,21 @@ const ALERTA: Record<AlertaHonorario, string> = {
   acordo_comercial:              'Valor de acordo comercial, não de contrato',
   valor_condicional:             'Valor depende do faturamento',
   valores_diferentes:            'Documentos da mesma data com valores diferentes',
-  documento_mais_novo_sem_valor: 'Há contrato mais novo sem valor lido (digitalizado?)',
+  documento_mais_novo_sem_valor: 'Há contrato mais novo sem valor lido',
+  mais_recente_digitalizado:     'O arquivo mais recente é foto ou escaneado: confira o valor nele',
+  documento_depois_do_informado: 'Chegou documento com outro valor depois do valor informado',
   sem_data:                      'Sem data no texto: usou a data do arquivo',
   leitura_incompleta:            'O robô ainda está lendo documentos desta empresa',
+  documento_sem_cnpj:            'Há documento mais novo, sem o CNPJ da empresa, com outro valor (pasta de grupo?)',
+  cnpj_diferente:                'O documento cita outro CNPJ: outra empresa ou erro de digitação no contrato',
 };
 
 /** Avisos que não põem o valor em dúvida (mesma lista do backend, honorariosRegras.ts). */
 const INFORMATIVOS = new Set<AlertaHonorario>(['sem_assinatura', 'sem_data']);
 const temAlertaGrave = (e: HonorarioEmpresa) => e.alertas.some((a) => !INFORMATIVOS.has(a));
+
+/** O valor saiu de um documento, mas há foto/escaneado mais novo (o valor informado à mão já resolve). */
+const fotoPendente = (e: HonorarioEmpresa) => e.fonte === 'documento' && !!e.fotoMaisRecente;
 
 const COMPARACAO: Record<ComparacaoAcessorias, { rotulo: string; classe: string }> = {
   NAO_CONFERIDO:    { rotulo: 'Não conferido',          classe: 'text-gray-500 dark:text-zinc-400' },
@@ -90,12 +97,17 @@ export function lerValorDigitado(texto: string): number | null {
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
 }
 
+/** "Acessórias está certo": só quando há um valor de verdade lá e ele não bate com o do app. */
+const podeConfirmarAcessorias = (e: HonorarioEmpresa) =>
+  e.situacao !== 'DISTRATO' && e.acessorias.comparacao === 'DIFERENTE' && (e.acessorias.valor ?? 0) >= 10;
+
 const podeAtualizar = (e: HonorarioEmpresa) =>
   e.situacao !== 'DISTRATO' && e.valor !== null
   && (e.acessorias.comparacao === 'DIFERENTE' || e.acessorias.comparacao === 'NAO_CONFERIDO');
 
-function passa(e: HonorarioEmpresa, situacao: string, comparacao: string, responsavel: string, busca: string) {
+function passa(e: HonorarioEmpresa, situacao: string, comparacao: string, responsavel: string, busca: string, foto: boolean) {
   if (situacao && e.situacao !== situacao) return false;
+  if (foto && !fotoPendente(e)) return false;
   if (comparacao && e.acessorias.comparacao !== comparacao) return false;
   if (responsavel === '__none__' && e.empresa.responsavel) return false;
   if (responsavel && responsavel !== '__none__' && e.empresa.responsavel !== responsavel) return false;
@@ -117,6 +129,7 @@ export default function Honorarios() {
   const comparacao  = params.get('acessorias') ?? '';
   const responsavel = params.get('responsavel') ?? '';
   const busca       = params.get('busca') ?? '';
+  const foto        = params.get('foto') === '1';
 
   const [limite, setLimite]           = useState(PASSO);
   const [abertas, setAbertas]         = useState<Set<string>>(new Set());
@@ -124,6 +137,7 @@ export default function Honorarios() {
   const [envio, setEnvio]             = useState<HonorarioEmpresa | null>(null);
   const [lote, setLote]               = useState<HonorarioEmpresa[] | null>(null);
   const [informar, setInformar]       = useState<HonorarioEmpresa | null>(null);
+  const [acessoriasCerto, setAcessoriasCerto] = useState<HonorarioEmpresa | null>(null);
 
   const { data, isLoading, isError, error } = useQuery({ queryKey: ['honorarios'], queryFn: getHonorarios });
   const { data: estado } = useQuery({
@@ -161,9 +175,10 @@ export default function Honorarios() {
   }
 
   const visiveis = useMemo(
-    () => (data?.empresas ?? []).filter((e) => passa(e, situacao, comparacao, responsavel, busca.trim())),
-    [data, situacao, comparacao, responsavel, busca],
+    () => (data?.empresas ?? []).filter((e) => passa(e, situacao, comparacao, responsavel, busca.trim(), foto)),
+    [data, situacao, comparacao, responsavel, busca, foto],
   );
+  const qtdFoto = useMemo(() => (data?.empresas ?? []).filter(fotoPendente).length, [data]);
 
   const operando  = !!estado?.operacao?.executando;
   const travado   = !!estado?.bloqueio;
@@ -321,6 +336,22 @@ export default function Honorarios() {
                   {c.rotulo} <span className="tabular-nums text-gray-500 dark:text-zinc-400">{c.qtd}</span>
                 </button>
               ))}
+            {qtdFoto > 0 && (
+              <button
+                type="button"
+                aria-pressed={foto}
+                onClick={() => setParam('foto', foto ? null : '1')}
+                title="Empresas cujo arquivo mais recente é foto ou PDF escaneado: o robô não lê o valor dele"
+                className={`ml-1 inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] rounded-md text-sm font-medium border transition-colors ${
+                  foto
+                    ? 'bg-orange-50 border-orange-300 text-orange-900 dark:bg-orange-900/30 dark:border-orange-700 dark:text-orange-200'
+                    : 'border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-800'
+                }`}
+              >
+                <Camera size={14} aria-hidden />
+                Mais recente é foto <span className="tabular-nums text-gray-500 dark:text-zinc-400">{qtdFoto}</span>
+              </button>
+            )}
           </div>
 
           <div className="flex flex-col md:flex-row gap-3 mb-4">
@@ -407,7 +438,7 @@ export default function Honorarios() {
           </p>
 
           {/* ── Tabela ── */}
-          <div className="card p-0 overflow-x-auto">
+          <div className="card p-0 overflow-x-auto relative">
             <table className="w-full text-sm">
               <caption className="sr-only">Honorário por empresa, no documento e no Acessórias</caption>
               <thead className="border-b border-gray-100 dark:border-zinc-800 text-left">
@@ -466,7 +497,9 @@ export default function Honorarios() {
                         <td className="px-4 py-3 text-right">
                           <p className="font-semibold tabular-nums text-gray-900 dark:text-zinc-100">{reais(e.valor)}</p>
                           <p className="text-xs text-gray-500 dark:text-zinc-400">
-                            {e.fonte === 'manual' && <>informado por {e.manual?.informadoPor}</>}
+                            {e.fonte === 'manual' && (e.manual?.origem === 'acessorias'
+                              ? <>do Acessórias, confirmado por {e.manual.informadoPor}</>
+                              : <>informado por {e.manual?.informadoPor}</>)}
                             {e.fonte === 'documento' && e.documento && (
                               <>{TIPO_DOC[e.documento.tipo].toLowerCase()} de {dataCurta(e.documento.data ?? e.documento.modificadoEm)}</>
                             )}
@@ -475,10 +508,18 @@ export default function Honorarios() {
                         </td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${sel.classe}`}>{sel.rotulo}</span>
+                          {fotoPendente(e) && (
+                            <span
+                              className="ml-1 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap bg-orange-100 text-orange-900 dark:bg-orange-900/40 dark:text-orange-200"
+                              title={`${e.fotoMaisRecente!.caminhoRelativo} (${dataCurta(e.fotoMaisRecente!.modificadoEm)}): o robô não lê foto nem PDF escaneado. Abra o arquivo e, se o valor for outro, use "Conferir valor".`}
+                            >
+                              <Camera size={12} aria-hidden /> Mais recente é foto
+                            </span>
+                          )}
                           <AvisoDistrato distrato={e.distrato} />
-                          {e.alertas.length > 0 && (
+                          {e.alertas.some((a) => a !== 'mais_recente_digitalizado' || !fotoPendente(e)) && (
                             <ul className="mt-1 space-y-0.5 text-xs">
-                              {e.alertas.map((a) => (
+                              {e.alertas.filter((a) => a !== 'mais_recente_digitalizado' || !fotoPendente(e)).map((a) => (
                                 <li key={a} className={`flex items-start gap-1 ${INFORMATIVOS.has(a)
                                   ? 'text-gray-500 dark:text-zinc-400'
                                   : 'text-amber-800 dark:text-amber-300'}`}>
@@ -514,6 +555,16 @@ export default function Honorarios() {
                                 onClick={() => setEnvio(e)}
                               >
                                 <CloudArrowUp size={14} aria-hidden /> Atualizar
+                              </button>
+                            )}
+                            {podeConfirmarAcessorias(e) && (
+                              <button
+                                type="button"
+                                className="btn-outline min-h-[40px] px-3 py-1.5 whitespace-nowrap"
+                                title="O valor do Acessórias está certo e o lido na pasta está errado"
+                                onClick={() => setAcessoriasCerto(e)}
+                              >
+                                <CheckCircle size={14} aria-hidden /> Acessórias está certo
                               </button>
                             )}
                             {e.situacao !== 'DISTRATO' && (
@@ -561,6 +612,7 @@ export default function Honorarios() {
         />
       )}
       {informar && <InformarValor e={informar} aoFechar={() => setInformar(null)} />}
+      {acessoriasCerto && <ConfirmarAcessoriasCerto e={acessoriasCerto} aoFechar={() => setAcessoriasCerto(null)} />}
     </div>
   );
 }
@@ -583,7 +635,9 @@ function Detalhes({ e }: { e: HonorarioEmpresa }) {
     <div className="space-y-3">
       {e.manual && (
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-zinc-400 mb-1">Valor informado</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-zinc-400 mb-1">
+            {e.manual.origem === 'acessorias' ? 'Valor do Acessórias, confirmado como certo' : 'Valor informado'}
+          </p>
           <p className="text-gray-800 dark:text-zinc-200">
             {reais(e.manual.valor)} · por {e.manual.informadoPor} em {dataHora(e.manual.informadoEm)}
             {e.manual.documento && <> · documento: <span className="break-all">{e.manual.documento}</span></>}
@@ -607,6 +661,21 @@ function Detalhes({ e }: { e: HonorarioEmpresa }) {
         </div>
       )}
 
+      {fotoPendente(e) && (
+        <div className="rounded-lg border border-orange-200 dark:border-orange-900 bg-orange-50/60 dark:bg-orange-950/30 p-3 text-orange-950 dark:text-orange-100">
+          <p className="flex items-start gap-1.5 font-medium">
+            <Camera size={16} className="shrink-0 mt-0.5" aria-hidden />
+            O arquivo mais recente é foto ou PDF escaneado, e o robô não lê o valor dele.
+          </p>
+          <p className="mt-1 text-sm">
+            <span className="break-all font-mono text-xs">{e.fotoMaisRecente!.caminhoRelativo}</span>
+            {' '}({dataCurta(e.fotoMaisRecente!.modificadoEm)}, data do arquivo). O valor acima ({reais(e.valor)}) é do
+            {' '}{TIPO_DOC[e.documento!.tipo].toLowerCase()} de {dataCurta(e.documento!.data ?? e.documento!.modificadoEm)}.
+            Abra a foto e, se o valor for outro, use <strong>Conferir valor</strong>.
+          </p>
+        </div>
+      )}
+
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-zinc-400 mb-1">
           Documentos da pasta ({e.documentos.length})
@@ -619,11 +688,14 @@ function Detalhes({ e }: { e: HonorarioEmpresa }) {
           <ul className="space-y-1">
             {e.documentos.map((d) => {
               const escolhido = e.documento && d.nomePasta === e.documento.nomePasta && d.caminhoRelativo === e.documento.caminhoRelativo;
+              const ehFoto = fotoPendente(e) && d.nomePasta === e.fotoMaisRecente!.nomePasta && d.caminhoRelativo === e.fotoMaisRecente!.caminhoRelativo;
               return (
                 <li key={`${d.nomePasta}/${d.caminhoRelativo}`} className="flex flex-wrap items-baseline gap-x-2">
                   {escolhido
                     ? <CheckCircle size={14} weight="fill" className="text-green-600 dark:text-green-400 shrink-0 self-center" aria-label="Documento usado" />
-                    : <span className="w-3.5 shrink-0" aria-hidden />}
+                    : ehFoto
+                      ? <Camera size={14} weight="fill" className="text-orange-600 dark:text-orange-400 shrink-0 self-center" aria-label="Arquivo mais recente, foto: conferir" />
+                      : <span className="w-3.5 shrink-0" aria-hidden />}
                   <span className="break-all text-gray-900 dark:text-zinc-100">{d.caminhoRelativo}</span>
                   <span className="text-xs text-gray-500 dark:text-zinc-400">
                     · {TIPO_DOC[d.tipo]} · {dataCurta(d.data ?? d.modificadoEm)}{!d.data && ' (arquivo)'} · {ESTADO_DOC[d.estado]}
@@ -641,6 +713,69 @@ function Detalhes({ e }: { e: HonorarioEmpresa }) {
 }
 
 // ── Envio de uma empresa ──────────────────────────────────────────
+
+/**
+ * "Acessórias está certo": o valor de lá passa a valer para a empresa e a leitura da pasta fica
+ * de lado. Nada vai para o Acessórias. O servidor usa a leitura dele, não o valor desta tela.
+ */
+function ConfirmarAcessoriasCerto({ e, aoFechar }: { e: HonorarioEmpresa; aoFechar: () => void }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [observacao, setObservacao] = useState('');
+  const valorAcessorias = e.acessorias.valor!;
+  const salvar = useMutation({
+    mutationFn: () => confirmarAcessoriasCerto(e.empresa.id, {
+      valorEsperado: valorAcessorias, observacao: observacao.trim() || undefined,
+    }),
+    onSuccess: () => {
+      toast(`${e.empresa.razaoSocial}: vale o valor do Acessórias (${reais(valorAcessorias)}).`, 'success');
+      queryClient.invalidateQueries({ queryKey: ['honorarios'] });
+      aoFechar();
+    },
+  });
+
+  return (
+    <Dialogo
+      titulo="O valor do Acessórias está certo?"
+      aoFechar={aoFechar}
+      travado={salvar.isPending}
+      rodape={(
+        <>
+          <button type="button" className="btn-outline min-h-[44px]" onClick={aoFechar} disabled={salvar.isPending}>Cancelar</button>
+          <button type="button" className="btn-primary min-h-[44px]" onClick={() => salvar.mutate()} disabled={salvar.isPending} data-autofocus>
+            {salvar.isPending ? <Spinner size={16} className="animate-spin" aria-hidden /> : <CheckCircle size={16} aria-hidden />}
+            Usar o valor do Acessórias
+          </button>
+        </>
+      )}
+    >
+      <p className="font-medium text-gray-900 dark:text-zinc-100">{e.empresa.razaoSocial}</p>
+      <p className="text-xs text-gray-500 dark:text-zinc-400 font-mono mb-3">{maskCNPJ(e.empresa.cnpj)}</p>
+      <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 mb-3">
+        <dt className="text-gray-500 dark:text-zinc-400">No Acessórias</dt>
+        <dd className="tabular-nums font-semibold text-gray-900 dark:text-zinc-100">{reais(valorAcessorias)}</dd>
+        <dt className="text-gray-500 dark:text-zinc-400">{e.fonte === 'manual' ? 'Informado à mão' : 'Lido na pasta'}</dt>
+        <dd className="tabular-nums">
+          {reais(e.valor)}
+          {e.fonte === 'documento' && e.documento && (
+            <span className="text-gray-500 dark:text-zinc-400">
+              {' '}({TIPO_DOC[e.documento.tipo].toLowerCase()} de {dataCurta(e.documento.data ?? e.documento.modificadoEm)})
+            </span>
+          )}
+        </dd>
+      </dl>
+      <p className="mb-3 text-gray-600 dark:text-zinc-400">
+        O app passa a usar o valor do Acessórias para esta empresa e deixa a leitura da pasta de lado. Nada é enviado
+        ao Acessórias. Se chegar documento novo com outro valor, a empresa ganha um alerta. Para desfazer, abra a
+        empresa e clique em <strong>Remover e voltar ao valor lido</strong>.
+      </p>
+      <label htmlFor="acc-obs" className="label">Motivo (opcional)</label>
+      <textarea id="acc-obs" className="input" rows={2} maxLength={300} value={observacao}
+        placeholder="Ex.: aditivo de redução de 01/09/2026" onChange={(ev) => setObservacao(ev.target.value)} />
+      {salvar.isError && <p className="mt-3 text-red-700 dark:text-red-400" role="alert">{salvar.error.message}</p>}
+    </Dialogo>
+  );
+}
 
 function ConfirmarEnvio({ e, aoFechar }: { e: HonorarioEmpresa; aoFechar: () => void }) {
   const queryClient = useQueryClient();
@@ -713,15 +848,19 @@ function ConfirmarLote({ empresas, aoFechar, aoEnviar }: {
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  // Empresa com alerta (valor condicional, de outra empresa do grupo, minuta…) fica de fora
+  // do lote, a não ser que a pessoa marque para incluir. Caso real: CICERO, 05/10/2026.
+  const [incluirComAlerta, setIncluirComAlerta] = useState(false);
+  const comAlerta = empresas.filter(temAlertaGrave);
+  const vaoSer = incluirComAlerta ? empresas : empresas.filter((e) => !temAlertaGrave(e));
   const enviar = useMutation({
-    mutationFn: () => enviarHonorariosLote(empresas.map((e) => ({ companyId: e.empresa.id, valorEsperado: e.valor! }))),
+    mutationFn: () => enviarHonorariosLote(vaoSer.map((e) => ({ companyId: e.empresa.id, valorEsperado: e.valor! }))),
     onSuccess: () => {
-      toast(`Envio de ${empresas.length} empresa(s) iniciado. O andamento aparece no quadro do Acessórias.`, 'info');
+      toast(`Envio de ${vaoSer.length} empresa(s) iniciado. O andamento aparece no quadro do Acessórias.`, 'info');
       queryClient.invalidateQueries({ queryKey: ['honorarios', 'acessorias'] });
       aoEnviar();
     },
   });
-  const comAlerta = empresas.filter(temAlertaGrave).length;
 
   return (
     <Dialogo
@@ -732,18 +871,27 @@ function ConfirmarLote({ empresas, aoFechar, aoEnviar }: {
       rodape={(
         <>
           <button type="button" className="btn-outline min-h-[44px]" onClick={aoFechar} disabled={enviar.isPending}>Cancelar</button>
-          <button type="button" className="btn-primary min-h-[44px]" onClick={() => enviar.mutate()} disabled={enviar.isPending} data-autofocus>
+          <button type="button" className="btn-primary min-h-[44px]" onClick={() => enviar.mutate()}
+            disabled={enviar.isPending || vaoSer.length === 0} data-autofocus>
             {enviar.isPending ? <Spinner size={16} className="animate-spin" aria-hidden /> : <CloudArrowUp size={16} aria-hidden />}
-            Atualizar {empresas.length}
+            Atualizar {vaoSer.length}
           </button>
         </>
       )}
     >
-      {comAlerta > 0 && (
-        <p className="mb-3 text-amber-800 dark:text-amber-300 flex gap-1.5">
-          <WarningCircle size={16} weight="fill" className="shrink-0 mt-0.5" aria-hidden />
-          {comAlerta} empresa(s) da seleção têm alerta. Confira antes de enviar.
-        </p>
+      {comAlerta.length > 0 && (
+        <div className="mb-3 rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50/60 dark:bg-amber-950/30 p-3">
+          <p className="text-amber-900 dark:text-amber-200 flex gap-1.5">
+            <WarningCircle size={16} weight="fill" className="shrink-0 mt-0.5" aria-hidden />
+            {comAlerta.length} empresa(s) da seleção têm alerta (valor condicional, de outra empresa do grupo,
+            minuta…) e {incluirComAlerta ? 'vão junto' : 'ficam de fora'} deste envio.
+          </p>
+          <label className="mt-2 flex items-center gap-2 text-gray-800 dark:text-zinc-200 min-h-[36px]">
+            <input type="checkbox" className="h-5 w-5 accent-brand-600" checked={incluirComAlerta}
+              onChange={(ev) => setIncluirComAlerta(ev.target.checked)} />
+            Já conferi: incluir as {comAlerta.length} com alerta
+          </label>
+        </div>
       )}
       <table className="w-full text-sm">
         <caption className="sr-only">Empresas que serão atualizadas</caption>
@@ -757,7 +905,10 @@ function ConfirmarLote({ empresas, aoFechar, aoEnviar }: {
         <tbody>
           {empresas.map((e) => (
             <tr key={e.empresa.id} className="border-t border-gray-100 dark:border-zinc-800">
-              <td className="py-1.5 pr-2">{e.empresa.razaoSocial}{temAlertaGrave(e) && <span className="text-amber-700 dark:text-amber-300"> · alerta</span>}</td>
+              <td className={`py-1.5 pr-2 ${temAlertaGrave(e) && !incluirComAlerta ? 'line-through text-gray-400 dark:text-zinc-500' : ''}`}>
+                {e.empresa.razaoSocial}
+                {temAlertaGrave(e) && <span className="text-amber-700 dark:text-amber-300 no-underline"> · alerta{!incluirComAlerta && ' (fica de fora)'}</span>}
+              </td>
               <td className="py-1.5 px-2 text-right tabular-nums">{reais(e.acessorias.valor)}</td>
               <td className="py-1.5 pl-2 text-right tabular-nums font-medium">{reais(e.valor)}</td>
             </tr>
