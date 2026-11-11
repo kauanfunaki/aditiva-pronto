@@ -97,6 +97,12 @@ export interface StatusAuditoria {
 }
 
 export async function obterStatus(agora = new Date()): Promise<StatusAuditoria> {
+  // A expiração também roda aqui, e não só quando o robô consulta: com o robô
+  // desligado, ninguém expirava o job e a tela ficava em "Sincronizando…" para
+  // sempre (caso de 19/10 a 11/11/2026, robô parado desde 05/10).
+  const expirados = await repo.expirarJobsParados(agora);
+  if (expirados) logger.warn(`[audit] ${expirados} job(s) expirado(s) por inatividade (consulta da tela)`);
+
   const [ativo, ultimoConcluido, ultimoFinalizado, hb] = await Promise.all([
     repo.buscarJobAtivo(),
     repo.buscarUltimoConcluido(),

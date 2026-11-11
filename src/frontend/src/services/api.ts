@@ -6,7 +6,7 @@ import type {
   ReportPayload, Responsavel,
   AuditStatus, AuditJob, AuditPastasResponse, AuditAcaoVinculo, AuditAcaoSemPasta,
   AuditRelatorioAditivos, AuditFiltrosAditivos,
-  AuditRelatorioContratos, AuditFiltrosContratos,
+  AuditRelatorioContratos, AuditFiltrosContratos, AuditConferencia, AuditSalvarConferencia,
   UsuarioLogado,
   RelatorioHonorarios, EstadoAcessorias, OperacaoAcessorias, ResultadoEnvioAcessorias, EnvioAcessorias,
 } from '../types';
@@ -201,6 +201,9 @@ export const updateAuditFolderLink = (payload: AuditAcaoVinculo) =>
 
 export const updateAuditEmpresaSemPasta = (payload: AuditAcaoSemPasta) =>
   http.put<{ message: string }>('/audit/companies/sem-pasta', payload).then((r) => r.data);
+
+export const saveAuditConferencia = (payload: AuditSalvarConferencia) =>
+  http.put<{ conferencia: AuditConferencia | null }>('/audit/conferencia', payload).then((r) => r.data);
 
 // ── Auditoria Aditivos ──────────────────────────────────────────
 export const getAuditAditivos = (ano: number) =>

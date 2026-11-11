@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { robotAuth } from '../middleware/robotAuth';
 import {
-  getStatus, postSync, getFolders, putFolderLink, putEmpresaSemPasta,
+  getStatus, postSync, getFolders, putFolderLink, putEmpresaSemPasta, putConferencia,
   postNextJob, postLote, postFinish, postFail, postTextosPendentes, postTextos,
 } from '../controllers/auditBaseController';
 
@@ -16,6 +16,7 @@ router.post('/sync',         postSync);
 router.get('/folders',       getFolders);
 router.put('/folders/link',  putFolderLink);
 router.put('/companies/sem-pasta', putEmpresaSemPasta);
+router.put('/conferencia',   putConferencia);   // Resolvido/Pendente + comentário
 
 export default router;
 

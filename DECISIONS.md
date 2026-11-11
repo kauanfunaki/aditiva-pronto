@@ -134,3 +134,21 @@ pendências e do percentual, sem envio de honorário). Contrato mais novo que o 
 voltou, distrato desconsiderado. Distrato de BPO e social são só aviso. Nada vai ao Acessórias por
 enquanto.
 
+
+---
+
+## ADR-011: Conferência manual na auditoria (Resolvido / Pendente + comentário)
+
+**Contexto (11/11/2026):** o Societário confere à mão o que o robô não identificou (arquivo com nome
+fora do padrão) e pediu, em Contratos e em Aditivos, um comentário por empresa e a marcação
+Resolvido/Pendente, com o resolvido saindo da lista de pendentes.
+
+**Decisão:** tabela `au_conferencias` (migration 011), uma linha por empresa + módulo + ano
+(aditivos pelo ano de referência da tela; contratos no ano 0). A classificação automática não muda:
+"Resolvido" só tira a empresa do filtro e da contagem de **Pendentes** e ganha o filtro
+**Resolvidos**; o percentual "em dia" continua sendo o da regra automática. Grava quem (conta do
+setor) e quando. Pendente sem comentário apaga a linha.
+
+**Junto:** a expiração de job parado passa a rodar também quando a tela consulta o status. Antes
+só rodava quando o robô consultava, e com o robô desligado (05/10 a 11/11/2026) um pedido de 19/10
+ficou "Sincronizando…" para sempre. Com o robô offline e pedido na fila, a barra diz isso em destaque.

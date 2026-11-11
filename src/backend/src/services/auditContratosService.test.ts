@@ -38,3 +38,17 @@ describe('filtrarEmpresasContratos', () => {
     expect(filtrarEmpresasContratos(empresas, { status: 'em_dia' })).toHaveLength(2);
   });
 });
+
+describe('filtrarEmpresasContratos — conferência manual', () => {
+  const resolvido = { situacao: 'resolvido' as const, comentario: null, atualizadoPor: 'Societário', atualizadoEm: new Date() };
+  const empresas = [
+    { ...empresa('1', 'NAO_LOCALIZADO', 'SEM_CONTRATO_SERVICO'), conferencia: resolvido },
+    { ...empresa('2', 'AGUARDANDO_ASSINATURA', 'PDF_SEM_ASSINATURA'), conferencia: null },
+    { ...empresa('3', 'ASSINADO', 'CONTRATO_DIGITAL_ASSINADO'), conferencia: null },
+  ];
+
+  it('resolvido sai das pendentes e aparece em resolvidos', () => {
+    expect(filtrarEmpresasContratos(empresas, { status: 'pendente' }).map((e) => e.empresa.id)).toEqual(['2']);
+    expect(filtrarEmpresasContratos(empresas, { status: 'resolvido' }).map((e) => e.empresa.id)).toEqual(['1']);
+  });
+});

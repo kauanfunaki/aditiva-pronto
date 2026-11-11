@@ -234,6 +234,25 @@ export interface AuditArquivoAditivo {
   modificadoEm:    string;
 }
 
+// ── Conferência manual (Resolvido/Pendente + comentário) ────────────
+
+export type AuditSituacaoConferencia = 'pendente' | 'resolvido';
+
+export interface AuditConferencia {
+  situacao:      AuditSituacaoConferencia;
+  comentario:    string | null;
+  atualizadoPor: string;
+  atualizadoEm:  string;
+}
+
+export interface AuditSalvarConferencia {
+  companyId:  string;
+  modulo:     'contratos' | 'aditivos';
+  ano?:       number;
+  situacao:   AuditSituacaoConferencia;
+  comentario: string | null;
+}
+
 export interface AuditEmpresaAditivo {
   empresa: { id: string; razaoSocial: string; cnpj: string; responsavel: string | null };
   status:                 AuditStatusAditivo;
@@ -251,6 +270,7 @@ export interface AuditEmpresaAditivo {
   ultimoGeradoNoApp:      string | null;
   alertas:                'gerado_no_app_sem_arquivo'[];
   distrato:               AuditDistrato | null;
+  conferencia:            AuditConferencia | null;
 }
 
 export interface AuditRelatorioAditivos {
@@ -266,13 +286,14 @@ export interface AuditRelatorioAditivos {
     marcadasSemPasta:      number;
     decimoTerceiro:        { empresas: number; assinados: number };
     distratos:             number;
+    resolvidos:            number;
   };
   empresas: AuditEmpresaAditivo[];
 }
 
 export interface AuditFiltrosAditivos {
   ano?:         number;
-  status?:      AuditStatusAditivo | 'em_dia' | 'pendente';
+  status?:      AuditStatusAditivo | 'em_dia' | 'pendente' | 'resolvido';
   responsavel?: string;
   busca?:       string;
   alerta?:      '1';
@@ -334,6 +355,7 @@ export interface AuditEmpresaContrato {
   warnings:          string[];
   renomeacao:        AuditPlanoRenomeacao | null;
   distrato:          AuditDistrato | null;
+  conferencia:       AuditConferencia | null;
 }
 
 export interface AuditRelatorioContratos {
@@ -346,12 +368,13 @@ export interface AuditRelatorioContratos {
     marcadasSemPasta: number;
     porStatus: Record<AuditStatusContrato, number>;
     distratos: number;
+    resolvidos: number;
   };
   empresas: AuditEmpresaContrato[];
 }
 
 export interface AuditFiltrosContratos {
-  status?:      AuditStatusContrato | 'em_dia' | 'pendente' | 'assinado_digital' | 'assinado_pelo_nome';
+  status?:      AuditStatusContrato | 'em_dia' | 'pendente' | 'resolvido' | 'assinado_digital' | 'assinado_pelo_nome';
   responsavel?: string;
   busca?:       string;
 }

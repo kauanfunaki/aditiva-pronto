@@ -7,6 +7,7 @@ import {
 } from '../services/auditPayload';
 import * as audit from '../services/auditSyncService';
 import * as textos from '../services/auditTextosService';
+import { conferenciaSchema, salvarConferencia } from '../services/auditConferencia';
 
 function validar<T extends z.ZodTypeAny>(schema: T, dados: unknown): z.infer<T> {
   const r = schema.safeParse(dados);
@@ -59,6 +60,15 @@ export async function putEmpresaSemPasta(req: Request, res: Response, next: Next
   try {
     await audit.alterarMarcaSemPasta(validar(marcaSemPastaSchema, req.body));
     res.json({ message: 'Empresa atualizada.' });
+  } catch (err) { next(err); }
+}
+
+// PUT /api/audit/conferencia — Resolvido/Pendente e comentário da conferência manual
+export async function putConferencia(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.usuario) throw new AppError(401, 'Entre com a conta do seu setor para continuar.');
+    const conferencia = await salvarConferencia(validar(conferenciaSchema, req.body), req.usuario.nome);
+    res.json({ conferencia });
   } catch (err) { next(err); }
 }
 
