@@ -13,6 +13,10 @@ import {
 import { planejarRenomeacaoContrato, type PlanoRenomeacaoContrato } from './auditContratosRenomeacao';
 import { ehSubpastaDistrato, paraDistratoDTO, textoDoDistrato, type DistratoDTO } from './auditDistrato';
 import { carregarDistratos } from './auditDistratoService';
+import {
+  CABECALHO_CONFERENCIA_XLSX, carregarConferencias, colunasConferenciaXlsx, ehPendente, resolvida,
+  resolvidaManualmente, type ConferenciaDTO,
+} from './auditConferencia';
 
 export const ROTULO_STATUS_CONTRATO: Record<StatusContrato, string> = {
   NAO_LOCALIZADO:         'Não localizado',
@@ -71,6 +75,8 @@ export interface EmpresaContrato {
   renomeacao:        PlanoRenomeacaoContrato | null;
   /** Distrato da prestação de serviços (tira das pendências) e avisos de BPO/social. */
   distrato:          DistratoDTO | null;
+  /** Conferência manual (Resolvido/Pendente + comentário). */
+  conferencia:       ConferenciaDTO | null;
 }
 
 export interface RelatorioContratos {
@@ -85,6 +91,8 @@ export interface RelatorioContratos {
     porStatus: Record<StatusContrato, number>;
     /** Empresas com distrato: ficam na lista, mas fora das pendências e do percentual. */
     distratos: number;
+    /** Marcadas como resolvidas na conferência manual que estariam pendentes. */
+    resolvidos: number;
   };
   empresas: EmpresaContrato[];
 }
@@ -116,17 +124,18 @@ export async function montarRelatorioContratos(): Promise<RelatorioContratos> {
   const vazio: RelatorioContratos = {
     job: null,
     raizUnc: config.raizUnc,
-    resumo: { empresas: 0, emDia: 0, revisar: 0, marcadasSemPasta: 0, porStatus: porStatusZerado(), distratos: 0 },
+    resumo: { empresas: 0, emDia: 0, revisar: 0, marcadasSemPasta: 0, porStatus: porStatusZerado(), distratos: 0, resolvidos: 0 },
     empresas: [],
   };
   if (!ultimo) return vazio;
 
-  const [pastas, vinculos, arquivos, todasAtivas, marcas] = await Promise.all([
+  const [pastas, vinculos, arquivos, todasAtivas, marcas, conferencias] = await Promise.all([
     baseRepo.listarPastasDoJob(ultimo.id),
     baseRepo.listarVinculos(),
     repo.listarArquivosDoJob(ultimo.id),
     repo.listarEmpresasAtivas(),
     baseRepo.listarMarcasSemPasta(),
+    carregarConferencias('contratos', 0),
   ]);
 
   const arquivosPorPasta = new Map<string, ArquivoParaClassificarContrato[]>();
@@ -197,6 +206,7 @@ export async function montarRelatorioContratos(): Promise<RelatorioContratos> {
       warnings: resultado.warnings,
       renomeacao: comDistrato ? null : renomeacao,
       distrato: paraDistratoDTO(distrato),
+      conferencia: conferencias.get(empresa.id) ?? null,
     };
   });
   linhas.sort((a, b) =>
@@ -215,13 +225,15 @@ export async function montarRelatorioContratos(): Promise<RelatorioContratos> {
       marcadasSemPasta: todasAtivas.length - empresas.length,
       porStatus,
       distratos: porStatus.DISTRATO,
+      resolvidos: linhas.filter(resolvidaManualmente).length,
     },
     empresas: linhas,
   };
 }
 
 export interface FiltrosContratos {
-  status?:      StatusContrato | 'em_dia' | 'pendente' | 'assinado_digital' | 'assinado_pelo_nome';
+  /** 'pendente' já desconta distrato e o que foi resolvido na conferência manual. */
+  status?:      StatusContrato | 'em_dia' | 'pendente' | 'resolvido' | 'assinado_digital' | 'assinado_pelo_nome';
   responsavel?: string;
   busca?:       string;
 }
@@ -233,10 +245,11 @@ export function filtrarEmpresasContratos(empresas: EmpresaContrato[], filtros: F
   const digitos = filtros.busca?.replace(/\D/g, '') ?? '';
   return empresas.filter((item) => {
     if (filtros.status === 'em_dia' && !item.emDia) return false;
-    if (filtros.status === 'pendente' && (item.emDia || item.status === 'DISTRATO')) return false;
+    if (filtros.status === 'pendente' && !ehPendente(item)) return false;
+    if (filtros.status === 'resolvido' && !resolvida(item)) return false;
     if (filtros.status === 'assinado_digital' && item.motivo !== 'CONTRATO_DIGITAL_ASSINADO') return false;
     if (filtros.status === 'assinado_pelo_nome' && item.motivo !== 'CONTRATO_ASSINADO_PELO_NOME') return false;
-    if (filtros.status && !['em_dia', 'pendente', 'assinado_digital', 'assinado_pelo_nome'].includes(filtros.status)
+    if (filtros.status && !['em_dia', 'pendente', 'resolvido', 'assinado_digital', 'assinado_pelo_nome'].includes(filtros.status)
       && item.status !== filtros.status) return false;
     if (filtros.responsavel === '__none__' && item.empresa.responsavel) return false;
     if (filtros.responsavel && filtros.responsavel !== '__none__' && item.empresa.responsavel !== filtros.responsavel) return false;
@@ -254,7 +267,7 @@ export function gerarXlsxContratos(relatorio: RelatorioContratos, empresas: Empr
   const cabecalho = [
     'Empresa', 'CNPJ', 'Responsável', 'Status', 'Motivo', 'Em dia',
     'Pasta(s) na rede', 'Contrato selecionado', 'Assinatura digital',
-    'Assinado pelo nome', 'Avisos', 'Renomeação (dry run)', 'Distrato',
+    'Assinado pelo nome', 'Avisos', 'Renomeação (dry run)', 'Distrato', ...CABECALHO_CONFERENCIA_XLSX,
   ];
   const linhas = empresas.map((item) => [
     item.empresa.razaoSocial,
@@ -270,6 +283,7 @@ export function gerarXlsxContratos(relatorio: RelatorioContratos, empresas: Empr
     item.warnings.join('; '),
     item.renomeacao?.recomendado ? item.renomeacao.caminhoDestino ?? '' : '',
     textoDoDistrato(item.distrato),
+    ...colunasConferenciaXlsx(item.conferencia),
   ]);
   const ws = utils.aoa_to_sheet([cabecalho, ...linhas]);
   ws['!cols'] = cabecalho.map((titulo, i) => ({

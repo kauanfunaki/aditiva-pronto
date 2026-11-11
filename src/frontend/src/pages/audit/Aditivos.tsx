@@ -10,6 +10,7 @@ import { useToast } from '../../context/ToastContext';
 import { maskCNPJ } from '../../utils/validators';
 import { SyncBar } from '../../components/audit/SyncBar';
 import { AvisoDistrato, CLASSE_DISTRATO } from '../../components/audit/AvisoDistrato';
+import { ConferenciaCelula, ehPendente, resolvida, resolvidaManualmente } from '../../components/audit/Conferencia';
 import type {
   AuditArquivoAditivo, AuditEmpresaAditivo, AuditFiltrosAditivos, AuditStatusAditivo,
 } from '../../types';
@@ -62,8 +63,9 @@ function passa(
   if (decimo === 'com' && !e.decimoTerceiro) return false;
   if (decimo === 'pendente' && (!e.decimoTerceiro || e.decimoTerceiro.assinado)) return false;
   if (status === 'em_dia' && !e.emDia) return false;
-  if (status === 'pendente' && (e.emDia || e.status === 'DISTRATO')) return false;
-  if (status && status !== 'em_dia' && status !== 'pendente' && e.status !== status) return false;
+  if (status === 'pendente' && !ehPendente(e)) return false;
+  if (status === 'resolvido' && !resolvida(e)) return false;
+  if (status && !['em_dia', 'pendente', 'resolvido'].includes(status) && e.status !== status) return false;
   if (responsavel === '__none__' && e.empresa.responsavel) return false;
   if (responsavel && responsavel !== '__none__' && e.empresa.responsavel !== responsavel) return false;
   if (busca) {
@@ -174,14 +176,19 @@ export default function Aditivos() {
   }
 
   const r = data?.resumo;
+  // Contados na tela (e não no resumo do servidor): a conferência atualiza só o cache da linha.
+  const qtdPendentes  = (data?.empresas ?? []).filter(ehPendente).length;
+  const qtdResolvidos = (data?.empresas ?? []).filter(resolvida).length;
+  const qtdResolvidosManual = (data?.empresas ?? []).filter(resolvidaManualmente).length;
   // Empresa com distrato fica na lista, mas fora das pendências e do percentual.
   const baseEmDia = r ? r.empresas - r.distratos : 0;
   const pctEmDia = r && baseEmDia ? Math.round((r.emDia / baseEmDia) * 100) : 0;
   const chips: { id: FiltroStatus | ''; rotulo: string; qtd: number }[] = r
     ? [
         { id: '',         rotulo: 'Todas',     qtd: r.empresas },
-        { id: 'pendente', rotulo: 'Pendentes', qtd: baseEmDia - r.emDia },
-        { id: 'em_dia',   rotulo: 'Em dia',    qtd: r.emDia },
+        { id: 'pendente',  rotulo: 'Pendentes',  qtd: qtdPendentes },
+        { id: 'em_dia',    rotulo: 'Em dia',     qtd: r.emDia },
+        { id: 'resolvido', rotulo: 'Resolvidos', qtd: qtdResolvidos },
         ...STATUS.map((s) => ({ id: s.id, rotulo: s.rotulo, qtd: r.porStatus[s.id] })),
       ]
     : [];
@@ -289,6 +296,12 @@ export default function Aditivos() {
                 )}
               </div>
             )}
+            {qtdResolvidosManual > 0 && (
+              <p className="mt-2 text-xs text-gray-500 dark:text-zinc-400">
+                {qtdResolvidosManual} empresa(s) fora do dia pela regra automática foram marcadas como resolvidas na
+                conferência manual e saíram das pendentes.
+              </p>
+            )}
             {r.distratos > 0 && (
               <p className="mt-2 text-xs text-gray-500 dark:text-zinc-400">
                 {r.distratos} empresa(s) com distrato da prestação de serviços: aparecem como “Distrato” e ficam fora das pendências.
@@ -384,13 +397,14 @@ export default function Aditivos() {
                   <th scope="col" className="table-head">13º</th>
                   <th scope="col" className="table-head text-right">Aditivos de {ano}</th>
                   <th scope="col" className="table-head text-right">Gerados no app</th>
+                  <th scope="col" className="table-head">Conferência</th>
                   <th scope="col" className="table-head"><span className="sr-only">Ações</span></th>
                 </tr>
               </thead>
               <tbody>
                 {visiveis.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-5 py-10 text-center text-gray-500 dark:text-zinc-400">
+                    <td colSpan={8} className="px-5 py-10 text-center text-gray-500 dark:text-zinc-400">
                       Nenhuma empresa neste filtro.
                     </td>
                   </tr>
@@ -454,6 +468,12 @@ export default function Aditivos() {
                         <td className="px-5 py-3 text-right tabular-nums text-gray-700 dark:text-zinc-300">{e.aditivosDoAno.length}</td>
                         <td className="px-5 py-3 text-right tabular-nums text-gray-700 dark:text-zinc-300">{e.geradosNoApp}</td>
                         <td className="px-5 py-3">
+                          <ConferenciaCelula
+                            modulo="aditivos" ano={ano} companyId={e.empresa.id} razaoSocial={e.empresa.razaoSocial}
+                            conferencia={e.conferencia} queryKey={['audit', 'aditivos', ano]}
+                          />
+                        </td>
+                        <td className="px-5 py-3">
                           <div className="flex justify-end">
                             {e.pastas.length ? (
                               <button type="button" className="btn-outline min-h-[44px] px-3 py-1.5 whitespace-nowrap"
@@ -472,7 +492,7 @@ export default function Aditivos() {
                       {aberta && (
                         <tr className="border-b border-gray-50 dark:border-zinc-800 bg-gray-50/60 dark:bg-zinc-900/60">
                           <td />
-                          <td colSpan={6} className="px-5 py-3">
+                          <td colSpan={7} className="px-5 py-3">
                             <ListaArquivos titulo={`Aditivo anual de ${ano}`} arquivos={e.aditivosDoAno} />
                             {e.decimoTerceiro && (
                               <div className="mt-3">

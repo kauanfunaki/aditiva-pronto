@@ -14,6 +14,7 @@ import type {
 } from '../../types';
 import { maskCNPJ } from '../../utils/validators';
 import { AvisoDistrato, CLASSE_DISTRATO } from '../../components/audit/AvisoDistrato';
+import { ConferenciaCelula, ehPendente, resolvida, resolvidaManualmente } from '../../components/audit/Conferencia';
 
 const PASSO = 100;
 
@@ -48,10 +49,11 @@ const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLo
 
 function passa(item: AuditEmpresaContrato, status: FiltroStatus | '', responsavel: string, busca: string) {
   if (status === 'em_dia' && !item.emDia) return false;
-  if (status === 'pendente' && (item.emDia || item.status === 'DISTRATO')) return false;
+  if (status === 'pendente' && !ehPendente(item)) return false;
+  if (status === 'resolvido' && !resolvida(item)) return false;
   if (status === 'assinado_digital' && item.motivo !== 'CONTRATO_DIGITAL_ASSINADO') return false;
   if (status === 'assinado_pelo_nome' && item.motivo !== 'CONTRATO_ASSINADO_PELO_NOME') return false;
-  if (status && !['em_dia', 'pendente', 'assinado_digital', 'assinado_pelo_nome'].includes(status)
+  if (status && !['em_dia', 'pendente', 'resolvido', 'assinado_digital', 'assinado_pelo_nome'].includes(status)
     && item.status !== status) return false;
   if (responsavel === '__none__' && item.empresa.responsavel) return false;
   if (responsavel && responsavel !== '__none__' && item.empresa.responsavel !== responsavel) return false;
@@ -142,13 +144,18 @@ export default function Contratos() {
   }
 
   const resumo = data?.resumo;
+  // Contados na tela (e não no resumo do servidor): a conferência atualiza só o cache da linha.
+  const qtdPendentes  = (data?.empresas ?? []).filter(ehPendente).length;
+  const qtdResolvidos = (data?.empresas ?? []).filter(resolvida).length;
+  const qtdResolvidosManual = (data?.empresas ?? []).filter(resolvidaManualmente).length;
   // Empresa com distrato fica na lista, mas fora das pendências e do percentual.
   const baseEmDia = resumo ? resumo.empresas - resumo.distratos : 0;
   const percentual = baseEmDia ? Math.round(((resumo?.emDia ?? 0) / baseEmDia) * 100) : 0;
   const chips: { id: FiltroStatus | ''; rotulo: string; qtd: number }[] = resumo ? [
     { id: '', rotulo: 'Todas', qtd: resumo.empresas },
-    { id: 'pendente', rotulo: 'Pendentes', qtd: baseEmDia - resumo.emDia },
+    { id: 'pendente', rotulo: 'Pendentes', qtd: qtdPendentes },
     { id: 'em_dia', rotulo: 'Em dia', qtd: resumo.emDia },
+    { id: 'resolvido', rotulo: 'Resolvidos', qtd: qtdResolvidos },
     { id: 'assinado_digital', rotulo: 'Assinado digital', qtd: data?.empresas.filter((e) => e.motivo === 'CONTRATO_DIGITAL_ASSINADO').length ?? 0 },
     { id: 'assinado_pelo_nome', rotulo: 'Assinado pelo nome', qtd: data?.empresas.filter((e) => e.motivo === 'CONTRATO_ASSINADO_PELO_NOME').length ?? 0 },
     ...STATUS.map((s) => ({ id: s.id, rotulo: s.rotulo, qtd: resumo.porStatus[s.id] })),
@@ -203,6 +210,11 @@ export default function Contratos() {
                 <WarningCircle size={16} weight="fill" aria-hidden /> {resumo.revisar} empresa(s) precisam de revisão manual.
               </p>
             )}
+            {qtdResolvidosManual > 0 && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">
+                {qtdResolvidosManual} empresa(s) marcadas como resolvidas na conferência manual saíram das pendentes.
+              </p>
+            )}
             {resumo.marcadasSemPasta > 0 && (
               <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">
                 {resumo.marcadasSemPasta} empresa(s) marcadas como “sem pasta de propósito” estão fora deste relatório.
@@ -252,11 +264,12 @@ export default function Contratos() {
                   <th className="table-head">Empresa</th>
                   <th className="table-head">Situação</th>
                   <th className="table-head">Contrato selecionado</th>
+                  <th className="table-head">Conferência</th>
                   <th className="table-head"><span className="sr-only">Ações</span></th>
                 </tr>
               </thead>
               <tbody>
-                {visiveis.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-gray-500">Nenhuma empresa neste filtro.</td></tr>}
+                {visiveis.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-gray-500">Nenhuma empresa neste filtro.</td></tr>}
                 {visiveis.slice(0, limite).map((item) => {
                   const aberta = abertas.has(item.empresa.id);
                   const temDetalhes = item.contratos.length + item.descartados.length > 0 || item.warnings.length > 0;
@@ -287,6 +300,12 @@ export default function Contratos() {
                         </td>
                         <td className="px-5 py-3 text-gray-700 dark:text-zinc-300 break-all">{item.contratoPrincipal?.nome ?? '—'}</td>
                         <td className="px-5 py-3">
+                          <ConferenciaCelula
+                            modulo="contratos" companyId={item.empresa.id} razaoSocial={item.empresa.razaoSocial}
+                            conferencia={item.conferencia} queryKey={['audit', 'contratos']}
+                          />
+                        </td>
+                        <td className="px-5 py-3">
                           <div className="flex justify-end">
                             {item.pastas.length ? <button type="button" className="btn-outline min-h-[44px] px-3 py-1.5 whitespace-nowrap"
                               onClick={() => copiarCaminho(item)}><Copy size={14} /> Copiar caminho</button>
@@ -295,7 +314,7 @@ export default function Contratos() {
                         </td>
                       </tr>
                       {aberta && <tr className="border-b border-gray-50 dark:border-zinc-800 bg-gray-50/60 dark:bg-zinc-900/60">
-                        <td /><td colSpan={4} className="px-5 py-3">
+                        <td /><td colSpan={5} className="px-5 py-3">
                           {item.warnings.map((aviso) => <p key={aviso} className="mb-2 flex items-start gap-1.5 text-sm text-purple-700 dark:text-purple-300"><WarningCircle size={16} className="shrink-0 mt-0.5" />{aviso}</p>)}
                           <ListaArquivos titulo="Contratos candidatos" arquivos={item.contratos} principal={item.contratoPrincipal?.caminhoRelativo} />
                           {item.descartados.length > 0 && <ListaArquivos titulo="Documentos descartados pela classificação" arquivos={item.descartados} apagado />}

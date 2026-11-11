@@ -11,7 +11,7 @@ const anoSchema = z.coerce.number().int().min(2015).max(2100).optional();
 
 const filtrosSchema = z.object({
   ano:         anoSchema,
-  status:      z.enum([...STATUS_ADITIVO, 'em_dia', 'pendente']).optional(),
+  status:      z.enum([...STATUS_ADITIVO, 'em_dia', 'pendente', 'resolvido']).optional(),
   responsavel: z.string().trim().max(100).optional(),
   busca:       z.string().trim().max(200).optional(),
   alerta:      z.enum(['1']).optional(),

@@ -71,3 +71,25 @@ describe('filtrarEmpresas — 13º', () => {
     expect(nomes(filtrarEmpresas(l, { decimo: 'pendente' }))).toEqual(['B']);
   });
 });
+
+describe('filtrarEmpresas — conferência manual', () => {
+  const resolvido = { situacao: 'resolvido' as const, comentario: 'Conferido na pasta', atualizadoPor: 'Societário', atualizadoEm: new Date() };
+  const lista2: EmpresaAditivo[] = [
+    { ...empresa('A SEM ADITIVO', 'SEM_ADITIVO'), conferencia: resolvido },
+    { ...empresa('B PDF SEM ASS', 'PDF_SEM_ASSINATURA'), conferencia: null },
+    { ...empresa('C DISTRATO', 'DISTRATO'), conferencia: null },
+    { ...empresa('D EM DIA', 'ASSINADO_DIGITAL'), conferencia: resolvido },
+  ];
+
+  it('resolvido sai das pendentes', () => {
+    expect(nomes(filtrarEmpresas(lista2, { status: 'pendente' }))).toEqual(['B PDF SEM ASS']);
+  });
+
+  it('filtro de resolvidos mostra todas as marcadas', () => {
+    expect(nomes(filtrarEmpresas(lista2, { status: 'resolvido' }))).toEqual(['A SEM ADITIVO', 'D EM DIA']);
+  });
+
+  it('o status automático continua o mesmo', () => {
+    expect(nomes(filtrarEmpresas(lista2, { status: 'SEM_ADITIVO' }))).toEqual(['A SEM ADITIVO']);
+  });
+});

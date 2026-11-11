@@ -9,7 +9,7 @@ import {
 
 const filtrosSchema = z.object({
   status:      z.enum([
-    ...STATUS_CONTRATO, 'em_dia', 'pendente', 'assinado_digital', 'assinado_pelo_nome',
+    ...STATUS_CONTRATO, 'em_dia', 'pendente', 'resolvido', 'assinado_digital', 'assinado_pelo_nome',
   ]).optional(),
   responsavel: z.string().trim().max(100).optional(),
   busca:       z.string().trim().max(200).optional(),

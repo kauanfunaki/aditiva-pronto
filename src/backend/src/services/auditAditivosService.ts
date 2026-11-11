@@ -10,6 +10,10 @@ import {
   arquivoEmDistrato, ehSubpastaDistrato, paraDistratoDTO, textoDoDistrato, type DistratoDTO,
 } from './auditDistrato';
 import { carregarDistratos } from './auditDistratoService';
+import {
+  CABECALHO_CONFERENCIA_XLSX, carregarConferencias, colunasConferenciaXlsx, ehPendente, resolvida,
+  resolvidaManualmente, type ConferenciaDTO,
+} from './auditConferencia';
 import { classificarAditivo, type ArquivoParaClassificar } from './auditAditivosClassificador';
 import {
   calcularStatusAditivo, STATUS_ADITIVO,
@@ -60,6 +64,8 @@ export interface EmpresaAditivo {
   alertas:                AlertaAditivo[];
   /** Distrato da prestação de serviços (tira das pendências) e avisos de BPO/social. */
   distrato:               DistratoDTO | null;
+  /** Conferência manual (Resolvido/Pendente + comentário) do ano de referência. */
+  conferencia:            ConferenciaDTO | null;
 }
 
 export interface RelatorioAditivos {
@@ -78,6 +84,8 @@ export interface RelatorioAditivos {
     decimoTerceiro:        { empresas: number; assinados: number };
     /** Empresas com distrato: ficam na lista, mas fora das pendências e do percentual. */
     distratos:             number;
+    /** Marcadas como resolvidas na conferência manual que estariam pendentes. */
+    resolvidos:            number;
   };
   empresas: EmpresaAditivo[];
 }
@@ -115,19 +123,20 @@ export async function montarRelatorioAditivos(anoReferencia: number): Promise<Re
     job: null, anoReferencia, anosDisponiveis: [anoReferencia], raizUnc: config.raizUnc,
     resumo: {
       empresas: 0, emDia: 0, porStatus: porStatusZerado(), geradoNoAppSemArquivo: 0, marcadasSemPasta: 0,
-      decimoTerceiro: { empresas: 0, assinados: 0 }, distratos: 0,
+      decimoTerceiro: { empresas: 0, assinados: 0 }, distratos: 0, resolvidos: 0,
     },
     empresas: [],
   };
   if (!ultimo) return vazio;
 
-  const [pastas, vinculos, arquivos, todasAtivas, gerados, marcas] = await Promise.all([
+  const [pastas, vinculos, arquivos, todasAtivas, gerados, marcas, conferencias] = await Promise.all([
     base.listarPastasDoJob(ultimo.id),
     base.listarVinculos(),
     repo.listarArquivosDoJob(ultimo.id),
     repo.listarEmpresasAtivas(),
     repo.contarGeradosNoApp(inicioDoAno(anoReferencia), inicioDoAno(anoReferencia + 1)),
     base.listarMarcasSemPasta(),
+    carregarConferencias('aditivos', anoReferencia),
   ]);
 
   // Arquivos agrupados por pasta.
@@ -197,6 +206,7 @@ export async function montarRelatorioAditivos(anoReferencia: number): Promise<Re
       ultimoGeradoNoApp:      g?.ultimo ?? null,
       alertas,
       distrato:               paraDistratoDTO(d),
+      conferencia:            conferencias.get(e.id) ?? null,
     };
   });
   linhas.sort((a, b) =>
@@ -231,6 +241,7 @@ export async function montarRelatorioAditivos(anoReferencia: number): Promise<Re
         assinados: linhas.filter((l) => l.decimoTerceiro?.assinado).length,
       },
       distratos: porStatus.DISTRATO,
+      resolvidos: linhas.filter(resolvidaManualmente).length,
     },
     empresas: linhas,
   };
@@ -239,7 +250,8 @@ export async function montarRelatorioAditivos(anoReferencia: number): Promise<Re
 // ── Filtros (tela e exportação usam os mesmos) ────────────────────
 
 export interface FiltrosAditivos {
-  status?:      StatusAditivo | 'em_dia' | 'pendente';
+  /** 'pendente' já desconta distrato e o que foi resolvido na conferência manual. */
+  status?:      StatusAditivo | 'em_dia' | 'pendente' | 'resolvido';
   /** undefined = todos · '__none__' = sem responsável · nome = só dele */
   responsavel?: string;
   busca?:       string;
@@ -259,8 +271,9 @@ export function filtrarEmpresas(empresas: EmpresaAditivo[], f: FiltrosAditivos):
     if (f.decimo === 'com' && !e.decimoTerceiro) return false;
     if (f.decimo === 'pendente' && (!e.decimoTerceiro || e.decimoTerceiro.assinado)) return false;
     if (f.status === 'em_dia' && !e.emDia) return false;
-    if (f.status === 'pendente' && (e.emDia || e.status === 'DISTRATO')) return false;
-    if (f.status && f.status !== 'em_dia' && f.status !== 'pendente' && e.status !== f.status) return false;
+    if (f.status === 'pendente' && !ehPendente(e)) return false;
+    if (f.status === 'resolvido' && !resolvida(e)) return false;
+    if (f.status && !['em_dia', 'pendente', 'resolvido'].includes(f.status) && e.status !== f.status) return false;
     if (f.responsavel === '__none__' && e.empresa.responsavel) return false;
     if (f.responsavel && f.responsavel !== '__none__' && e.empresa.responsavel !== f.responsavel) return false;
     if (termo) {
@@ -288,7 +301,7 @@ export function gerarXlsxAditivos(rel: RelatorioAditivos, empresas: EmpresaAditi
     'Empresa', 'CNPJ', 'Responsável', 'Status', 'Em dia',
     'Pasta(s) na rede', `Aditivos de ${rel.anoReferencia}`, 'Arquivos',
     'Último ano com aditivo', `13º de ${rel.anoReferencia}`,
-    `Gerados no app em ${rel.anoReferencia}`, 'Alerta', 'Distrato',
+    `Gerados no app em ${rel.anoReferencia}`, 'Alerta', 'Distrato', ...CABECALHO_CONFERENCIA_XLSX,
   ];
   const linhas = empresas.map((e) => [
     e.empresa.razaoSocial,
@@ -304,6 +317,7 @@ export function gerarXlsxAditivos(rel: RelatorioAditivos, empresas: EmpresaAditi
     e.geradosNoApp,
     e.alertas.includes('gerado_no_app_sem_arquivo') ? 'Gerado no app, mas não está na pasta' : '',
     textoDoDistrato(e.distrato),
+    ...colunasConferenciaXlsx(e.conferencia),
   ]);
 
   const ws = utils.aoa_to_sheet([cabecalho, ...linhas]);

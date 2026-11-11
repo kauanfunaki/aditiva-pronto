@@ -65,6 +65,9 @@ export function SyncBar() {
   const ativo     = data?.ativo ?? null;
   const robo      = data?.robo ?? null;
   const ocupado   = !!ativo || syncMut.isPending;
+  // Robô desligado com pedido na fila: nada está sincronizando de verdade. Mostrar isso
+  // em destaque, e não um "Sincronizando…" girando (caso de 19/10 a 11/11/2026).
+  const esperandoRobo = !!ativo && !!robo && !robo.online;
   const total     = ativo?.pastasTotal ?? null;
   const progresso = ativo && total ? Math.min(100, Math.round((ativo.pastasRecebidas / total) * 100)) : 0;
 
@@ -77,6 +80,18 @@ export function SyncBar() {
       <span className="flex items-center gap-2 text-red-700 dark:text-red-300">
         <WarningCircle size={18} weight="fill" aria-hidden />
         Não foi possível consultar a sincronização.
+      </span>
+    );
+  } else if (esperandoRobo) {
+    principal = (
+      <span className="flex items-start gap-2 text-amber-800 dark:text-amber-200">
+        <WarningCircle size={18} weight="fill" className="shrink-0 mt-0.5" aria-hidden />
+        <span>
+          <strong className="font-semibold">O robô está desligado desde {dataHora(robo!.vistoEm)}.</strong>{' '}
+          A sincronização pedida em {dataHora(ativo!.solicitadoEm)} fica na fila até ele voltar
+          (se ninguém ligar o robô em 24 h, o pedido é cancelado sozinho).
+          {data?.ultimoConcluido && <> O relatório mostra a última sincronização concluída, de {dataHora(data.ultimoConcluido.concluidoEm ?? data.ultimoConcluido.solicitadoEm)}.</>}
+        </span>
       </span>
     );
   } else if (ativo?.status === 'pendente') {
@@ -126,7 +141,7 @@ export function SyncBar() {
             <p className="flex items-start gap-2 text-red-700 dark:text-red-300">
               <WarningCircle size={16} weight="fill" className="shrink-0 mt-0.5" aria-hidden />
               <span>
-                A tentativa de {dataHora(data.ultimoErro.solicitadoEm)} falhou: {data.ultimoErro.erro ?? 'erro desconhecido'}.
+                A tentativa de {dataHora(data.ultimoErro.solicitadoEm)} falhou: {(data.ultimoErro.erro ?? 'erro desconhecido').replace(/\.+$/, '')}.
                 {data.ultimoConcluido && ' O relatório mostra a última sincronização que deu certo.'}
               </span>
             </p>
@@ -153,8 +168,8 @@ export function SyncBar() {
           disabled={ocupado || isLoading}
           title="Pede ao robô uma nova varredura das pastas dos clientes"
         >
-          <ArrowsClockwise size={16} className={ocupado ? 'animate-spin' : ''} aria-hidden />
-          {ativo ? 'Sincronizando…' : 'Sincronizar'}
+          <ArrowsClockwise size={16} className={ocupado && !esperandoRobo ? 'animate-spin' : ''} aria-hidden />
+          {esperandoRobo ? 'Aguardando o robô' : ativo ? 'Sincronizando…' : 'Sincronizar'}
         </button>
       </div>
 
