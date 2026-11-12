@@ -31,6 +31,25 @@ async function listarPastasRaiz(config) {
     .map((entrada) => entrada.nome);
 }
 
+/**
+ * Nomes das pastas dentro da pasta de ex-clientes (ex.: "009_EMPRESAS EX CLIENTES"), sem entrar
+ * nelas: só os nomes, para o app tirar essas empresas da auditoria. A pasta vem da configuração do
+ * servidor e tem que ser um nome simples, direto na raiz. Sem configuração devolve null; se não der
+ * para ler, lança (quem chama decide se a varredura continua).
+ */
+async function listarPastasExClientes(config) {
+  const nome = typeof config.pastaExClientes === 'string' ? config.pastaExClientes.trim() : '';
+  if (!nome) return null;
+  if (/[\\/]/.test(nome) || nome === '.' || nome === '..') {
+    throw new Error(`pastaExClientes inválida: "${nome}" (precisa ser uma pasta direto na raiz).`);
+  }
+  const entradas = await fs.readdir(path.join(config.raizUnc, nome), { withFileTypes: true });
+  return entradas
+    .filter((entrada) => entrada.isDirectory())
+    .map((entrada) => entrada.name)
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
 async function listarArquivosRecursivamente(raizCliente, diretorio, arquivos, erros) {
   let entradas;
   try {
@@ -108,6 +127,7 @@ function compilarRegex(texto) {
 module.exports = {
   compilarRegex,
   ehArquivoSistema,
+  listarPastasExClientes,
   listarPastasRaiz,
   mensagemErro,
   semAcentoMaiusculo,

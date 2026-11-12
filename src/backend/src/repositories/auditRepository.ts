@@ -25,6 +25,8 @@ export interface AuditConfig {
   pastaFinal:            string;
   regexSubpastaContrato: string;
   horarioAgendado:       string | null;
+  /** Pasta dos ex-clientes, relativa à raiz (migration 012). null = não lista. */
+  pastaExClientes:       string | null;
 }
 
 export const CONFIG_PADRAO: AuditConfig = {
@@ -33,7 +35,10 @@ export const CONFIG_PADRAO: AuditConfig = {
   pastaFinal:            'ZANATO & CHAVES LTDA',
   regexSubpastaContrato: REGEX_SUBPASTA_CONTRATO_PADRAO,
   horarioAgendado:       '06:00',
+  pastaExClientes:       '009_EMPRESAS EX CLIENTES',
 };
+
+const ehColunaInexistente = (err: unknown) => (err as { code?: string }).code === 'ER_BAD_FIELD_ERROR';
 
 export interface JobRow extends RowDataPacket {
   id:                 string;
@@ -96,6 +101,7 @@ interface ConfigRow extends RowDataPacket {
   pasta_final:             string;
   regex_subpasta_contrato: string;
   horario_agendado:        string | null;
+  pasta_ex_clientes?:      string | null;
 }
 
 /** Lê a configuração; na primeira vez grava os valores padrão. */
@@ -110,10 +116,21 @@ export async function obterConfig(): Promise<AuditConfig> {
       CONFIG_PADRAO.regexSubpastaContrato, CONFIG_PADRAO.horarioAgendado,
     ],
   );
-  const [rows] = await db.query<ConfigRow[]>(
-    `SELECT raiz_unc, pasta_inicial, pasta_final, regex_subpasta_contrato, horario_agendado
-     FROM au_config WHERE id = 1`,
-  );
+  // Sem a migration 012 a coluna não existe: segue sem a lista de ex-clientes em vez de
+  // derrubar o robô (o deploy de 11/11 saiu antes da migration 011).
+  let rows: ConfigRow[];
+  try {
+    [rows] = await db.query<ConfigRow[]>(
+      `SELECT raiz_unc, pasta_inicial, pasta_final, regex_subpasta_contrato, horario_agendado, pasta_ex_clientes
+       FROM au_config WHERE id = 1`,
+    );
+  } catch (err) {
+    if (!ehColunaInexistente(err)) throw err;
+    [rows] = await db.query<ConfigRow[]>(
+      `SELECT raiz_unc, pasta_inicial, pasta_final, regex_subpasta_contrato, horario_agendado
+       FROM au_config WHERE id = 1`,
+    );
+  }
   const r = rows[0];
   return {
     raizUnc:               r.raiz_unc,
@@ -121,7 +138,36 @@ export async function obterConfig(): Promise<AuditConfig> {
     pastaFinal:            r.pasta_final,
     regexSubpastaContrato: r.regex_subpasta_contrato,
     horarioAgendado:       r.horario_agendado,
+    pastaExClientes:       r.pasta_ex_clientes?.trim() || null,
   };
+}
+
+/** Grava os nomes das pastas de ex-clientes vistos na varredura. Sem a migration 012, só avisa. */
+export async function gravarExClientesDoJob(jobId: string, nomes: string[]): Promise<boolean> {
+  try {
+    await getPool().query(`UPDATE au_sync_jobs SET ex_clientes = ? WHERE id = ?`, [JSON.stringify(nomes), jobId]);
+    return true;
+  } catch (err) {
+    if (ehColunaInexistente(err)) return false;
+    throw err;
+  }
+}
+
+/** Lista de ex-clientes da varredura concluída mais recente que trouxe uma (robô 1.2+). null = nenhuma ainda. */
+export async function buscarUltimaListaExClientes(): Promise<string[] | null> {
+  try {
+    const [rows] = await getPool().query<(RowDataPacket & { ex_clientes: unknown })[]>(
+      `SELECT ex_clientes FROM au_sync_jobs
+       WHERE status = 'concluido' AND ex_clientes IS NOT NULL
+       ORDER BY concluido_em DESC LIMIT 1`,
+    );
+    if (!rows.length) return null;
+    const v = typeof rows[0].ex_clientes === 'string' ? JSON.parse(rows[0].ex_clientes) : rows[0].ex_clientes;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : null;
+  } catch (err) {
+    if (ehColunaInexistente(err)) return null;
+    throw err;
+  }
 }
 
 // ── Jobs ──────────────────────────────────────────────────────────

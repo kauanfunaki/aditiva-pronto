@@ -253,6 +253,14 @@ export interface AuditSalvarConferencia {
   comentario: string | null;
 }
 
+/** Empresa com pasta só em "009_EMPRESAS EX CLIENTES": fica fora da auditoria. */
+export interface AuditExCliente {
+  id:          string;
+  razaoSocial: string;
+  cnpj:        string;
+  pasta:       string;
+}
+
 export interface AuditEmpresaAditivo {
   empresa: { id: string; razaoSocial: string; cnpj: string; responsavel: string | null };
   status:                 AuditStatusAditivo;
@@ -271,6 +279,8 @@ export interface AuditEmpresaAditivo {
   alertas:                'gerado_no_app_sem_arquivo'[];
   distrato:               AuditDistrato | null;
   conferencia:            AuditConferencia | null;
+  /** Também tem pasta em Ex Clientes (nome dela), além da pasta ativa. */
+  exCliente:              string | null;
 }
 
 export interface AuditRelatorioAditivos {
@@ -287,6 +297,7 @@ export interface AuditRelatorioAditivos {
     decimoTerceiro:        { empresas: number; assinados: number };
     distratos:             number;
     resolvidos:            number;
+    exClientes:            AuditExCliente[];
   };
   empresas: AuditEmpresaAditivo[];
 }
@@ -356,6 +367,7 @@ export interface AuditEmpresaContrato {
   renomeacao:        AuditPlanoRenomeacao | null;
   distrato:          AuditDistrato | null;
   conferencia:       AuditConferencia | null;
+  exCliente:         string | null;
 }
 
 export interface AuditRelatorioContratos {
@@ -369,6 +381,7 @@ export interface AuditRelatorioContratos {
     porStatus: Record<AuditStatusContrato, number>;
     distratos: number;
     resolvidos: number;
+    exClientes: AuditExCliente[];
   };
   empresas: AuditEmpresaContrato[];
 }

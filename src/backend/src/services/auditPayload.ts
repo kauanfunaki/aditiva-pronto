@@ -56,6 +56,8 @@ export const concluirSchema = z.object({
     pastas:   z.number().int().nonnegative(),
     arquivos: z.number().int().nonnegative(),
   }),
+  /** Robô 1.2+: nomes das pastas dentro da pasta de ex-clientes (só os nomes). */
+  exClientes: z.array(z.string().trim().min(1).max(300)).max(5000).optional(),
 });
 
 export const falharSchema = z.object({

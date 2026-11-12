@@ -14,6 +14,7 @@ import type {
 } from '../../types';
 import { maskCNPJ } from '../../utils/validators';
 import { AvisoDistrato, CLASSE_DISTRATO } from '../../components/audit/AvisoDistrato';
+import { AvisoExCliente, ResumoExClientes } from '../../components/audit/ExClientes';
 import { ConferenciaCelula, ehPendente, resolvida, resolvidaManualmente } from '../../components/audit/Conferencia';
 
 const PASSO = 100;
@@ -215,6 +216,7 @@ export default function Contratos() {
                 {qtdResolvidosManual} empresa(s) marcadas como resolvidas na conferência manual saíram das pendentes.
               </p>
             )}
+            <ResumoExClientes exClientes={resumo.exClientes} />
             {resumo.marcadasSemPasta > 0 && (
               <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">
                 {resumo.marcadasSemPasta} empresa(s) marcadas como “sem pasta de propósito” estão fora deste relatório.
@@ -297,6 +299,7 @@ export default function Contratos() {
                           </span>
                           <p className="mt-1 text-xs text-gray-500 dark:text-zinc-400">{MOTIVO[item.motivo]}</p>
                           <AvisoDistrato distrato={item.distrato} />
+                          <AvisoExCliente pasta={item.exCliente} />
                         </td>
                         <td className="px-5 py-3 text-gray-700 dark:text-zinc-300 break-all">{item.contratoPrincipal?.nome ?? '—'}</td>
                         <td className="px-5 py-3">

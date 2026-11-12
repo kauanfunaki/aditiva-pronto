@@ -188,6 +188,7 @@ export async function concluir(
   jobId: string,
   totais: { pastas: number; arquivos: number },
   agora = new Date(),
+  exClientes?: string[],
 ): Promise<{ vinculosAutomaticos: number }> {
   const r = await repo.concluirJob(jobId, totais, agora);
   if (r.resultado === 'job_inativo') throw new AppError(409, MSG_JOB_INATIVO);
@@ -197,6 +198,11 @@ export async function concluir(
       `Totais não batem: chegaram ${r.recebido.pastas} de ${totais.pastas} pastas e ` +
       `${r.recebido.arquivos} de ${totais.arquivos} arquivos. O job foi marcado como erro.`,
     );
+  }
+
+  // Robô 1.2+ manda os nomes das pastas de ex-clientes; robô antigo não manda (o app usa a última lista).
+  if (exClientes && !(await repo.gravarExClientesDoJob(jobId, exClientes))) {
+    logger.warn('[audit] lista de ex-clientes recebida, mas a migration 012 não foi aplicada: lista descartada');
   }
 
   const vinculosAutomaticos = await aplicarVinculosAutomaticos(jobId, agora);

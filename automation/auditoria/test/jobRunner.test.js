@@ -83,3 +83,41 @@ test('envia o primeiro lote antes de terminar a varredura completa', async () =>
     await fs.rm(raiz, { recursive: true, force: true });
   }
 });
+
+test('manda os nomes da pasta de ex-clientes no fim; se ela não existir, conclui sem a lista', async () => {
+  const raiz = await fs.mkdtemp(path.join(os.tmpdir(), 'audit-job-ex-'));
+  try {
+    await fs.mkdir(path.join(raiz, 'ALFA LTDA'));
+    await fs.mkdir(path.join(raiz, '009_EMPRESAS EX CLIENTES', 'VELHA LTDA'), { recursive: true });
+    const config = {
+      raizUnc: raiz, pastaInicial: 'ALFA LTDA', pastaFinal: 'ALFA LTDA',
+      regexSubpastaContrato: '^CONTRATO', normalizacao: 'semAcentoMaiusculo',
+      pastaExClientes: '009_EMPRESAS EX CLIENTES',
+    };
+    const rodar = async (cfg) => {
+      const recebido = {};
+      const api = {
+        async enviarLote() {},
+        async concluir(_id, totais, ex) { recebido.totais = totais; recebido.ex = ex; return { vinculosAutomaticos: 0 }; },
+        async falhar(_id, erro) { recebido.falha = erro; },
+      };
+      const r = await executarJob({
+        api, logger, signal: new AbortController().signal,
+        trabalho: { job: { id: 'j', origem: 'manual', retomada: false }, config: cfg, limites: { maxPastasPorLote: 500, maxArquivosPorLote: 5000 } },
+      });
+      return { r, recebido };
+    };
+
+    const ok = await rodar(config);
+    assert.equal(ok.r.resultado, 'concluido');
+    assert.deepEqual(ok.recebido.ex, ['VELHA LTDA']);
+    assert.deepEqual(ok.recebido.totais, { pastas: 1, arquivos: 0 }); // a pasta de ex-clientes não entra no inventário
+
+    const semPasta = await rodar({ ...config, pastaExClientes: 'NAO EXISTE' });
+    assert.equal(semPasta.r.resultado, 'concluido');
+    assert.equal(semPasta.recebido.ex, null);
+    assert.equal(semPasta.recebido.falha, undefined);
+  } finally {
+    await fs.rm(raiz, { recursive: true, force: true });
+  }
+});

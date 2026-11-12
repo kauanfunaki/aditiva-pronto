@@ -1,7 +1,7 @@
 'use strict';
 
 const { criarAcumuladorLotes } = require('./batches');
-const { compilarRegex, listarPastasRaiz, mensagemErro, varrerPasta } = require('./scanner');
+const { compilarRegex, listarPastasExClientes, listarPastasRaiz, mensagemErro, varrerPasta } = require('./scanner');
 const { ApiError, JobInativoError } = require('./apiClient');
 
 async function reportarFalha(api, jobId, err, logger) {
@@ -62,7 +62,16 @@ async function executarJob({ api, trabalho, logger, signal }) {
       pastas: pastasLidas,
       arquivos: arquivosLidos,
     };
-    const resposta = await api.concluir(job.id, totais);
+    // Ex-clientes: só os nomes das pastas. Falha aqui não derruba a varredura (o app usa a última lista).
+    let exClientes = null;
+    try {
+      exClientes = await listarPastasExClientes(config);
+      if (exClientes) logger.info('Pastas de ex-clientes listadas.', { jobId: job.id, total: exClientes.length });
+    } catch (err) {
+      logger.warn('Não foi possível listar a pasta de ex-clientes.', { jobId: job.id, erro: mensagemErro(err) });
+    }
+
+    const resposta = await api.concluir(job.id, totais, exClientes);
     logger.info('Job concluído.', { jobId: job.id, ...totais, vinculosAutomaticos: resposta.vinculosAutomaticos });
     return { resultado: 'concluido', totais };
   } catch (err) {
