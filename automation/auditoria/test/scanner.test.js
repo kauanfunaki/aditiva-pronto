@@ -89,3 +89,26 @@ test('pasta sem subpasta de contrato também produz resultado', async () => {
     });
   });
 });
+
+test('lista só os nomes das pastas de ex-clientes, sem entrar nelas', async () => {
+  const { listarPastasExClientes } = require('../src/scanner');
+  await comPastaTemporaria(async (raiz) => {
+    const ex = path.join(raiz, '009_EMPRESAS EX CLIENTES');
+    await fs.mkdir(path.join(ex, 'BETA LTDA', 'CONTRATO DE SERVIÇOS'), { recursive: true });
+    await fs.mkdir(path.join(ex, 'ALFA LTDA'));
+    await fs.writeFile(path.join(ex, 'leia-me.txt'), 'x');
+    const nomes = await listarPastasExClientes({ raizUnc: raiz, pastaExClientes: '009_EMPRESAS EX CLIENTES' });
+    assert.deepEqual(nomes, ['ALFA LTDA', 'BETA LTDA']);
+  });
+});
+
+test('pasta de ex-clientes: sem configuração devolve null; caminho fora da raiz é recusado', async () => {
+  const { listarPastasExClientes } = require('../src/scanner');
+  await comPastaTemporaria(async (raiz) => {
+    assert.equal(await listarPastasExClientes({ raizUnc: raiz, pastaExClientes: null }), null);
+    assert.equal(await listarPastasExClientes({ raizUnc: raiz }), null);
+    for (const ruim of ['..', '..\\Outra', 'a/b', '.']) {
+      await assert.rejects(listarPastasExClientes({ raizUnc: raiz, pastaExClientes: ruim }), /inválida/);
+    }
+  });
+});

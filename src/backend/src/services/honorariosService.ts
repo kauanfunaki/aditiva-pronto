@@ -12,6 +12,7 @@ import { atualizarLeiturasAntigas, chaveDoArquivo, EXTENSOES_COM_TEXTO, mesmaVer
 import { paraJobDTO, type JobDTO } from './auditSyncService';
 import { tipoDoDocumento, type FormaLeitura, type TipoDocumento } from './honorarioLeitor';
 import { arquivoEmDistrato, paraDistratoDTO, type DistratoDTO } from './auditDistrato';
+import { carregarExClientes } from './auditExClientes';
 import { carregarDistratos } from './auditDistratoService';
 import {
   compararComAcessorias, escolherHonorario, minutaPeloNome, situacaoDoHonorario, SITUACOES_HONORARIO,
@@ -179,7 +180,13 @@ export async function montarRelatorioHonorarios(): Promise<RelatorioHonorarios> 
   const envioPorEmpresa = new Map(envios.map((e) => [e.company_id, e]));
 
   const marcadas = new Set(marcas.map((m) => m.company_id));
-  const empresas = ativas.filter((e) => !(marcadas.has(e.id) && !pastasPorEmpresa.has(e.id)));
+  const naAuditoria = ativas.filter((e) => !(marcadas.has(e.id) && !pastasPorEmpresa.has(e.id)));
+  // Ex-cliente (pasta só em "009_EMPRESAS EX CLIENTES") não recebe honorário: fica fora, como em Aditivos/Contratos.
+  const ex = await carregarExClientes(
+    naAuditoria.map((e) => ({ id: e.id, razaoSocial: e.razao_social, cnpj: e.cnpj })),
+    (id) => pastasPorEmpresa.has(id),
+  );
+  const empresas = naAuditoria.filter((e) => !ex.fora.has(e.id));
   const distratos = await carregarDistratos(arquivos, pastasPorEmpresa);
 
   const linhas: EmpresaHonorario[] = empresas.map((e) => {

@@ -152,3 +152,22 @@ setor) e quando. Pendente sem comentário apaga a linha.
 **Junto:** a expiração de job parado passa a rodar também quando a tela consulta o status. Antes
 só rodava quando o robô consultava, e com o robô desligado (05/10 a 11/11/2026) um pedido de 19/10
 ficou "Sincronizando…" para sempre. Com o robô offline e pedido na fila, a barra diz isso em destaque.
+
+---
+
+## ADR-012: Ex-clientes ficam fora da auditoria
+
+**Contexto (12/11/2026):** o Societário reclamou que a auditoria listava ex-clientes. Quando o
+cliente sai, a pasta dele vai para `009_EMPRESAS EX CLIENTES` na raiz, mas a empresa continua ativa
+no app, porque vem ativa na relação do Domínio. O robô já não varria essa pasta (fica fora do
+intervalo `pasta_inicial`…`pasta_final`). O problema era a empresa, não a pasta.
+
+**Decisão:** o robô 1.2 lista só os **nomes** das pastas dentro de `au_config.pasta_ex_clientes`
+(migration 012, padrão `009_EMPRESAS EX CLIENTES`), sem entrar nelas, e manda no fim da varredura
+(`au_sync_jobs.ex_clientes`). O app casa os nomes com as empresas pela mesma regra do vínculo
+automático (nome normalizado único ou filial pela ordem do CNPJ; nada de similaridade, para não
+tirar cliente por engano). Empresa com pasta **só** em Ex Clientes sai de Aditivos, Contratos e
+Honorários, listada no resumo. Empresa com pasta em Ex Clientes **e** pasta ativa continua, com aviso
+(decisão do Kauan: a pasta ativa vence). Para trazer de volta, basta mover a pasta para a raiz.
+
+Robô antigo (sem a lista) e app sem a migration 012 seguem funcionando: sem lista, ninguém sai.

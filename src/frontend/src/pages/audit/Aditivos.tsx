@@ -10,6 +10,7 @@ import { useToast } from '../../context/ToastContext';
 import { maskCNPJ } from '../../utils/validators';
 import { SyncBar } from '../../components/audit/SyncBar';
 import { AvisoDistrato, CLASSE_DISTRATO } from '../../components/audit/AvisoDistrato';
+import { AvisoExCliente, ResumoExClientes } from '../../components/audit/ExClientes';
 import { ConferenciaCelula, ehPendente, resolvida, resolvidaManualmente } from '../../components/audit/Conferencia';
 import type {
   AuditArquivoAditivo, AuditEmpresaAditivo, AuditFiltrosAditivos, AuditStatusAditivo,
@@ -307,6 +308,7 @@ export default function Aditivos() {
                 {r.distratos} empresa(s) com distrato da prestação de serviços: aparecem como “Distrato” e ficam fora das pendências.
               </p>
             )}
+            <ResumoExClientes exClientes={r.exClientes} />
             {r.marcadasSemPasta > 0 && (
               <p className="mt-2 text-xs text-gray-500 dark:text-zinc-400">
                 {r.marcadasSemPasta} empresa(s) marcada(s) como sem pasta na rede ficaram fora da auditoria.{' '}
@@ -453,6 +455,7 @@ export default function Aditivos() {
                             )}
                           </div>
                           <AvisoDistrato distrato={e.distrato} />
+                          <AvisoExCliente pasta={e.exCliente} />
                         </td>
                         <td className="px-5 py-3">
                           {e.decimoTerceiro ? (

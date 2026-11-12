@@ -101,8 +101,8 @@ export async function postLote(req: Request, res: Response, next: NextFunction) 
 export async function postFinish(req: Request, res: Response, next: NextFunction) {
   try {
     const jobId = jobIdDe(req);
-    const { totais } = validar(concluirSchema, req.body);
-    res.json(await audit.concluir(jobId, totais));
+    const { totais, exClientes } = validar(concluirSchema, req.body);
+    res.json(await audit.concluir(jobId, totais, new Date(), exClientes));
   } catch (err) { next(err); }
 }
 
